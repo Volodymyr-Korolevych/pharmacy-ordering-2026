@@ -1,82 +1,120 @@
 <template>
-  <div class="mx-auto max-w-xl">
-    <h1 class="text-2xl font-bold">Вхід / Реєстрація</h1>
-    <p class="mt-1 text-sm text-gray-600">
-      Доступ до застосунку можливий лише після входу.
-    </p>
-
-    <div class="mt-6 grid gap-6">
-      <section class="rounded-2xl border bg-white p-5 shadow-sm">
-        <h2 class="text-lg font-semibold">Клієнт</h2>
-        <div class="mt-3 flex gap-2">
-          <button class="rounded-xl border px-3 py-2 text-sm" :class="tab==='login' ? 'bg-gray-50' : 'bg-white'" @click="tab='login'">Вхід</button>
-          <button class="rounded-xl border px-3 py-2 text-sm" :class="tab==='register' ? 'bg-gray-50' : 'bg-white'" @click="tab='register'">Реєстрація</button>
+  <div class="min-h-[calc(100vh-120px)] grid place-items-center">
+    <div class="w-full max-w-md rounded-3xl border bg-white p-6 shadow-sm">
+      <div class="mb-6">
+        <div class="text-xl font-bold">
+          {{ mode === 'login' ? 'Вхід у застосунок' : 'Реєстрація' }}
         </div>
+        <div class="mt-1 text-sm text-gray-600">
+          {{ mode === 'login'
+            ? 'Увійдіть, щоб зробити онлайн-замовлення ліків.'
+            : 'Створіть акаунт, щоб зробити перше замовлення.' }}
+        </div>
+      </div>
 
-        <form class="mt-4 grid gap-3" @submit.prevent="onClientSubmit">
-          <label class="grid gap-1">
-            <span class="text-sm text-gray-700">Email</span>
-            <input v-model.trim="clientEmail" type="email" required class="rounded-xl border px-3 py-2" />
-          </label>
-          <label class="grid gap-1">
-            <span class="text-sm text-gray-700">Пароль</span>
-            <input v-model.trim="clientPassword" type="password" required minlength="6" class="rounded-xl border px-3 py-2" />
-          </label>
+      <form v-if="mode === 'login'" class="grid gap-4" @submit.prevent="onLogin">
+        <label class="grid gap-1">
+          <span class="text-sm text-gray-700">Email / Логін</span>
+          <input
+            v-model.trim="login"
+            type="text"
+            autocomplete="username"
+            required
+            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
+            placeholder="name@email.com або apotheke005"
+          />
+        </label>
 
-          <AlertBox :text="clientMsg" :kind="clientMsgKind" />
+        <label class="grid gap-1">
+          <span class="text-sm text-gray-700">Пароль</span>
+          <input
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
+            placeholder="••••••••"
+          />
+        </label>
 
-          <UiButton type="submit" variant="primary">
-            {{ tab === 'login' ? 'Увійти' : 'Зареєструватися' }}
-          </UiButton>
+        <AlertBox :text="msg" :kind="msgKind" />
 
-          <p class="text-xs text-gray-500">
-            * Для клієнта використовується Firebase Auth (Email/Password).
-          </p>
-        </form>
-      </section>
+        <UiButton type="submit" variant="primary" :disabled="submitting" class="w-full">
+          Увійти
+        </UiButton>
 
-      <section class="rounded-2xl border bg-white p-5 shadow-sm">
-        <h2 class="text-lg font-semibold">Адмін / Провізор</h2>
-        <p class="mt-1 text-sm text-gray-600">
-          Фіксовані логіни (через .env). Реєстрації немає.
+        <p class="text-center text-sm text-gray-600">
+          Ще немає акаунта?
+          <button type="button" class="font-semibold text-emerald-700 hover:underline" @click="openRegister">
+            Зареєструйтесь зараз
+          </button>
         </p>
+      </form>
 
-        <form class="mt-4 grid gap-3" @submit.prevent="onFixedSubmit">
-          <label class="grid gap-1">
-            <span class="text-sm text-gray-700">Логін</span>
-            <input v-model.trim="fixedLogin" type="text" required class="rounded-xl border px-3 py-2" placeholder="admin або apotheke005" />
-          </label>
-          <label class="grid gap-1">
-            <span class="text-sm text-gray-700">Пароль</span>
-            <input v-model.trim="fixedPassword" type="password" required class="rounded-xl border px-3 py-2" />
-          </label>
+      <form v-else class="grid gap-4" @submit.prevent="onRegister">
+        <label class="grid gap-1">
+          <span class="text-sm text-gray-700">Email</span>
+          <input
+            v-model.trim="regEmail"
+            type="email"
+            autocomplete="email"
+            required
+            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
+            placeholder="name@email.com"
+          />
+        </label>
 
-          <AlertBox :text="fixedMsg" :kind="fixedMsgKind" />
+        <label class="grid gap-1">
+          <span class="text-sm text-gray-700">Пароль</span>
+          <input
+            v-model="regPassword"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            required
+            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
+            placeholder="мінімум 6 символів"
+          />
+        </label>
 
-          <UiButton type="submit" variant="primary">Увійти</UiButton>
+        <AlertBox :text="msg" :kind="msgKind" />
 
-          <p class="text-xs text-gray-500">
-            Провізор: логін <code>apotheke001</code> … <code>apotheke010</code>. Пароль спільний: <code>PHARMACIST_PASSWORD</code>.
-          </p>
-        </form>
-      </section>
+        <UiButton type="submit" variant="primary" :disabled="submitting" class="w-full">
+          Зареєструватися
+        </UiButton>
+
+        <p class="text-center text-sm text-gray-600">
+          Вже маєте акаунт?
+          <button type="button" class="font-semibold text-emerald-700 hover:underline" @click="openLogin">
+            Увійдіть
+          </button>
+        </p>
+      </form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-const { authKind, ensureAuthReady, clientLogin, clientRegister, fixedLoginAdmin, fixedLoginPharmacist } = useAuthFacade()
+const {
+  authKind,
+  ensureAuthReady,
+  clientLogin,
+  clientRegister,
+  fixedLoginAdmin,
+  fixedLoginPharmacist
+} = useAuthFacade()
 
-const tab = ref<'login'|'register'>('login')
-const clientEmail = ref('')
-const clientPassword = ref('')
-const clientMsg = ref('')
-const clientMsgKind = ref<'info'|'error'|'success'>('info')
+const mode = ref<'login' | 'register'>('login')
 
-const fixedLogin = ref('')
-const fixedPassword = ref('')
-const fixedMsg = ref('')
-const fixedMsgKind = ref<'info'|'error'|'success'>('info')
+const login = ref('')
+const password = ref('')
+
+const regEmail = ref('')
+const regPassword = ref('')
+
+const submitting = ref(false)
+const msg = ref('')
+const msgKind = ref<'info' | 'error' | 'success'>('info')
 
 onMounted(async () => {
   await ensureAuthReady()
@@ -91,42 +129,72 @@ function startRouteFor(kind: string) {
   return '/catalog'
 }
 
-async function onClientSubmit () {
-  clientMsg.value = ''
+function resetMsg() {
+  msg.value = ''
+  msgKind.value = 'info'
+}
+
+function openRegister() {
+  resetMsg()
+  mode.value = 'register'
+  regEmail.value = ''
+  regPassword.value = ''
+}
+
+function openLogin() {
+  resetMsg()
+  mode.value = 'login'
+  login.value = ''
+  password.value = ''
+}
+
+async function onLogin() {
+  resetMsg()
+  submitting.value = true
   try {
-    if (tab.value === 'login') {
-      await clientLogin(clientEmail.value, clientPassword.value)
-    } else {
-      await clientRegister(clientEmail.value, clientPassword.value)
+    // 1) Admin (fixed)
+    if (fixedLoginAdmin(login.value, password.value)) {
+      msgKind.value = 'success'
+      msg.value = 'Успішний вхід.'
+      await navigateTo('/admin/products')
+      return
     }
-    clientMsgKind.value = 'success'
-    clientMsg.value = 'Успішно!'
+
+    // 2) Pharmacist (fixed apotheke001..010)
+    const pr = fixedLoginPharmacist(login.value, password.value)
+    if (pr.ok) {
+      msgKind.value = 'success'
+      msg.value = 'Успішний вхід.'
+      await navigateTo('/pharmacist/orders')
+      return
+    }
+
+    // 3) Client (Firebase email/password)
+    await clientLogin(login.value, password.value)
+    msgKind.value = 'success'
+    msg.value = 'Успішний вхід.'
     await navigateTo('/catalog')
   } catch (e: any) {
-    clientMsgKind.value = 'error'
-    clientMsg.value = e?.message || 'Помилка входу/реєстрації'
+    msgKind.value = 'error'
+    msg.value = e?.message || 'Не вдалося увійти. Перевірте дані.'
+  } finally {
+    submitting.value = false
   }
 }
 
-async function onFixedSubmit () {
-  fixedMsg.value = ''
-  // admin
-  if (fixedLoginAdmin(fixedLogin.value, fixedPassword.value)) {
-    fixedMsgKind.value = 'success'
-    fixedMsg.value = 'Успішний вхід (адмін).'
-    await navigateTo('/admin/products')
-    return
+async function onRegister() {
+  resetMsg()
+  submitting.value = true
+  try {
+    await clientRegister(regEmail.value, regPassword.value)
+    msgKind.value = 'success'
+    msg.value = 'Акаунт створено. Успішний вхід.'
+    await navigateTo('/catalog')
+  } catch (e: any) {
+    msgKind.value = 'error'
+    msg.value = e?.message || 'Не вдалося зареєструватися.'
+  } finally {
+    submitting.value = false
   }
-  // pharmacist
-  const r = fixedLoginPharmacist(fixedLogin.value, fixedPassword.value)
-  if (r.ok) {
-    fixedMsgKind.value = 'success'
-    fixedMsg.value = `Успішний вхід (провізор ${r.pharmacyCode}).`
-    await navigateTo('/pharmacist/orders')
-    return
-  }
-
-  fixedMsgKind.value = 'error'
-  fixedMsg.value = 'Невірний логін або пароль.'
 }
 </script>
