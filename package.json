@@ -1,0 +1,25 @@
+{
+  "name": "pharmacy-ordering-nuxt",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "lint": "eslint .",
+    "typecheck": "nuxi typecheck",
+    "seed:pharmacies": "node scripts/seed-pharmacies.mjs"
+  },
+  "dependencies": {
+    "nuxt": "^3.12.4",
+    "firebase": "^10.13.0",
+    "pinia": "^2.1.7",
+    "@pinia/nuxt": "^0.5.1"
+  },
+  "devDependencies": {
+    "@nuxtjs/tailwindcss": "^6.12.1",
+    "eslint": "^9.9.0",
+    "@eslint/js": "^9.9.0",
+    "typescript": "^5.5.4"
+  }
+}
