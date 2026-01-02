@@ -1,0 +1,892 @@
+name: TASK001-FIX2 - Fix redirects by simplifying middleware (remove role middlewares)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task001_fix2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Remove role middlewares (client/admin/pharmacist)
+        shell: bash
+        run: |
+          rm -f middleware/client.ts middleware/admin.ts middleware/pharmacist.ts
+
+      - name: Overwrite middleware/auth.global.ts (single auth gate)
+        shell: bash
+        run: |
+          mkdir -p middleware
+          cat > middleware/auth.global.ts <<'EOF'
+          export default defineNuxtRouteMiddleware(async (to) => {
+            // /auth завжди доступний
+            if (to.path === '/auth') return
+
+            const { authKind, ensureAuthReady } = useAuthFacade()
+            await ensureAuthReady()
+
+            // Без входу — забороняємо весь застосунок
+            if (authKind.value === 'none') {
+              return navigateTo('/auth')
+            }
+          })
+          EOF
+
+      - name: Add composable for role guarding (used by pages)
+        shell: bash
+        run: |
+          mkdir -p composables
+          cat > composables/requireRole.ts <<'EOF'
+          type AuthKind = 'none' | 'client' | 'admin' | 'pharmacist'
+
+          function startRouteFor(kind: AuthKind) {
+            if (kind === 'admin') return '/admin/products'
+            if (kind === 'pharmacist') return '/pharmacist/orders'
+            if (kind === 'client') return '/catalog'
+            return '/auth'
+          }
+
+          export async function requireRole(expected: Exclude<AuthKind, 'none'>) {
+            const { authKind, ensureAuthReady } = useAuthFacade()
+            await ensureAuthReady()
+
+            if (authKind.value === expected) return
+
+            // Якщо залогінений не тією роллю — ведемо у "свій" стартовий розділ
+            return navigateTo(startRouteFor(authKind.value))
+          }
+          EOF
+
+      # ===== CLIENT PAGES =====
+      - name: Overwrite pages/catalog.vue
+        shell: bash
+        run: |
+          cat > pages/catalog.vue <<'EOF'
+          <template>
+            <div class="grid gap-6">
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-xl font-bold">Каталог ліків</h1>
+                <p class="mt-1 text-sm text-gray-600">Категорії фіксовані (2 рівні). Пошуку/фільтрів немає.</p>
+
+                <div class="mt-4 grid gap-4 md:grid-cols-2">
+                  <label class="grid gap-1">
+                    <span class="text-sm text-gray-700">Категорія (1 рівень)</span>
+                    <select v-model="parent" class="rounded-xl border px-3 py-2">
+                      <option value="">— Усі —</option>
+                      <option v-for="p in parents" :key="p" :value="p">{{ p }}</option>
+                    </select>
+                  </label>
+
+                  <label class="grid gap-1">
+                    <span class="text-sm text-gray-700">Підкатегорія (2 рівень)</span>
+                    <select v-model="child" class="rounded-xl border px-3 py-2" :disabled="!parent">
+                      <option value="">— Усі —</option>
+                      <option v-for="c in children" :key="c" :value="c">{{ c }}</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="mt-4">
+                  <UiButton @click="resetFilters">Скинути</UiButton>
+                </div>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div v-if="loading" class="text-sm text-gray-600">Завантаження...</div>
+                <ProductCard v-for="p in filtered" :key="p.id" :product="p" />
+                <div v-if="!loading && filtered.length === 0" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
+                  Нічого не знайдено.
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { CATEGORIES } from '~/data/categories'
+
+          await requireRole('client')
+
+          const { products, loading, fetchAll } = useProducts()
+
+          const parent = ref<string>('')
+          const child = ref<string>('')
+
+          const parents = computed(() => Object.keys(CATEGORIES))
+          const children = computed(() => parent.value ? (CATEGORIES as any)[parent.value] as string[] : [])
+
+          const filtered = computed(() => {
+            return products.value.filter(p => {
+              if (parent.value && p.parentCategory !== parent.value) return false
+              if (child.value && p.childCategory !== child.value) return false
+              return true
+            })
+          })
+
+          onMounted(async () => {
+            await fetchAll()
+          })
+
+          function resetFilters () {
+            parent.value = ''
+            child.value = ''
+          }
+          </script>
+          EOF
+
+      - name: Overwrite pages/product/[id].vue
+        shell: bash
+        run: |
+          mkdir -p pages/product
+          cat > pages/product/[id].vue <<'EOF'
+          <template>
+            <div v-if="!product" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
+              Товар не знайдено.
+            </div>
+
+            <div v-else class="grid gap-6 md:grid-cols-[280px_1fr]">
+              <div class="overflow-hidden rounded-2xl border bg-white p-4 shadow-sm">
+                <div class="aspect-square overflow-hidden rounded-xl bg-gray-100">
+                  <img v-if="product.imageUrl" :src="product.imageUrl" class="h-full w-full object-cover" alt="" />
+                </div>
+                <div class="mt-4 text-sm text-gray-500">{{ product.parentCategory }} / {{ product.childCategory }}</div>
+                <div class="mt-2 text-2xl font-bold">{{ product.price.toFixed(2) }} грн</div>
+                <UiButton class="mt-4 w-full" variant="primary" @click="add">Додати в кошик</UiButton>
+              </div>
+
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-2xl font-bold">{{ product.name }}</h1>
+                <div class="mt-2 text-sm text-gray-600">Виробник: <span class="font-medium">{{ product.manufacturer }}</span></div>
+                <p class="mt-4 whitespace-pre-line text-sm leading-6 text-gray-800">
+                  {{ product.description }}
+                </p>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { useCartStore } from '~/stores/cart'
+
+          await requireRole('client')
+
+          const route = useRoute()
+          const { products, fetchAll } = useProducts()
+          const cart = useCartStore()
+
+          const product = computed(() => products.value.find(p => p.id === String(route.params.id)))
+
+          onMounted(async () => {
+            if (products.value.length === 0) await fetchAll()
+          })
+
+          function add () {
+            if (!product.value?.id) return
+            cart.add({
+              productId: product.value.id,
+              name: product.value.name,
+              price: product.value.price,
+              imageUrl: product.value.imageUrl
+            }, 1)
+            navigateTo('/cart')
+          }
+          </script>
+          EOF
+
+      - name: Overwrite pages/cart.vue
+        shell: bash
+        run: |
+          cat > pages/cart.vue <<'EOF'
+          <template>
+            <div class="grid gap-6">
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-xl font-bold">Кошик</h1>
+
+                <div v-if="cart.items.length === 0" class="mt-3 text-sm text-gray-600">
+                  Кошик порожній.
+                </div>
+
+                <div v-else class="mt-4 grid gap-3">
+                  <div v-for="it in cart.items" :key="it.productId" class="flex items-center justify-between rounded-xl border p-3">
+                    <div class="flex items-center gap-3">
+                      <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100">
+                        <img v-if="it.imageUrl" :src="it.imageUrl" class="h-full w-full object-cover" alt="" />
+                      </div>
+                      <div>
+                        <div class="text-sm font-semibold">{{ it.name }}</div>
+                        <div class="text-xs text-gray-500">{{ it.price.toFixed(2) }} грн</div>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <input
+                        :value="it.qty"
+                        type="number"
+                        min="1"
+                        class="w-20 rounded-xl border px-3 py-2 text-sm"
+                        @input="onQty(it.productId, $event)"
+                      />
+                      <UiButton variant="danger" @click="cart.remove(it.productId)">Видалити</UiButton>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between pt-2">
+                    <div class="text-sm text-gray-700">Разом:</div>
+                    <div class="text-lg font-bold">{{ cart.total.toFixed(2) }} грн</div>
+                  </div>
+
+                  <div class="flex justify-end">
+                    <UiButton variant="primary" @click="goCheckout">Оформити (самовивіз)</UiButton>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { useCartStore } from '~/stores/cart'
+
+          await requireRole('client')
+
+          const cart = useCartStore()
+
+          function onQty (productId: string, e: Event) {
+            const val = Number((e.target as HTMLInputElement).value)
+            cart.setQty(productId, Number.isFinite(val) ? val : 1)
+          }
+
+          function goCheckout () {
+            if (cart.items.length === 0) return
+            navigateTo('/checkout')
+          }
+          </script>
+          EOF
+
+      - name: Overwrite pages/checkout.vue
+        shell: bash
+        run: |
+          cat > pages/checkout.vue <<'EOF'
+          <template>
+            <div class="mx-auto max-w-2xl rounded-2xl border bg-white p-5 shadow-sm">
+              <h1 class="text-xl font-bold">Оформлення замовлення</h1>
+              <p class="mt-1 text-sm text-gray-600">Самовивіз. Оплата при отриманні.</p>
+
+              <AlertBox class="mt-4" :text="msg" :kind="msgKind" />
+
+              <div class="mt-4 grid gap-3">
+                <label class="grid gap-1">
+                  <span class="text-sm text-gray-700">Оберіть аптеку</span>
+                  <select v-model="pharmacyCode" class="rounded-xl border px-3 py-2">
+                    <option value="">— Оберіть —</option>
+                    <option v-for="p in PHARMACIES" :key="p.code" :value="p.code">
+                      {{ p.code }} — {{ p.name }}, {{ p.address }}
+                    </option>
+                  </select>
+                </label>
+
+                <div class="rounded-xl border bg-gray-50 p-3 text-sm text-gray-700">
+                  <div class="flex justify-between">
+                    <span>Сума:</span>
+                    <span class="font-semibold">{{ cart.total.toFixed(2) }} грн</span>
+                  </div>
+                  <div class="mt-1 text-xs text-gray-500">Оплата: при отриманні</div>
+                </div>
+
+                <UiButton variant="primary" :disabled="submitting" @click="submit">
+                  Підтвердити замовлення
+                </UiButton>
+
+                <UiButton v-if="createdOrderId" @click="goOrders">Перейти в історію замовлень</UiButton>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { PHARMACIES } from '~/data/pharmacies'
+          import { useCartStore } from '~/stores/cart'
+
+          await requireRole('client')
+
+          const cart = useCartStore()
+          const { clientUser } = useAuthFacade()
+          const { create } = useOrders()
+
+          const pharmacyCode = ref('')
+          const submitting = ref(false)
+          const msg = ref('')
+          const msgKind = ref<'info'|'error'|'success'>('info')
+          const createdOrderId = ref<string>('')
+
+          onMounted(() => {
+            if (cart.items.length === 0) navigateTo('/cart')
+          })
+
+          async function submit () {
+            msg.value = ''
+            if (!pharmacyCode.value) {
+              msgKind.value = 'error'
+              msg.value = 'Оберіть аптеку.'
+              return
+            }
+            if (!clientUser.value) {
+              msgKind.value = 'error'
+              msg.value = 'Сесія закінчилась. Увійдіть ще раз.'
+              return
+            }
+
+            submitting.value = true
+            try {
+              const id = await create({
+                userId: clientUser.value.uid,
+                pharmacyCode: pharmacyCode.value,
+                items: cart.items.map(i => ({ productId: i.productId, name: i.name, price: i.price, qty: i.qty })),
+                total: cart.total,
+                status: 'new',
+                createdAt: Date.now()
+              })
+              createdOrderId.value = id
+              cart.clear()
+              msgKind.value = 'success'
+              msg.value = 'Замовлення прийняте.'
+            } catch (e: any) {
+              msgKind.value = 'error'
+              msg.value = e?.message || 'Не вдалося створити замовлення.'
+            } finally {
+              submitting.value = false
+            }
+          }
+
+          function goOrders () {
+            navigateTo('/orders')
+          }
+          </script>
+          EOF
+
+      - name: Overwrite pages/orders.vue
+        shell: bash
+        run: |
+          cat > pages/orders.vue <<'EOF'
+          <template>
+            <div class="rounded-2xl border bg-white p-5 shadow-sm">
+              <h1 class="text-xl font-bold">Мої замовлення</h1>
+              <p class="mt-1 text-sm text-gray-600">Статуси клієнту не відображаються.</p>
+
+              <div v-if="loading" class="mt-4 text-sm text-gray-600">Завантаження...</div>
+
+              <div v-else class="mt-4 grid gap-3">
+                <NuxtLink
+                  v-for="o in orders"
+                  :key="o.id"
+                  :to="`/orders/${o.id}`"
+                  class="rounded-xl border p-3 hover:bg-gray-50"
+                >
+                  <div class="flex items-center justify-between">
+                    <div class="text-sm font-semibold">Замовлення {{ o.id?.slice(-6) }}</div>
+                    <div class="text-sm font-bold">{{ o.total.toFixed(2) }} грн</div>
+                  </div>
+                  <div class="mt-1 text-xs text-gray-500">
+                    {{ new Date(o.createdAt).toLocaleString('uk-UA') }} • Аптека: {{ o.pharmacyCode }}
+                  </div>
+                </NuxtLink>
+
+                <div v-if="orders.length === 0" class="text-sm text-gray-600">
+                  Замовлень поки немає.
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          await requireRole('client')
+
+          const { clientUser } = useAuthFacade()
+          const { listForUser, loading } = useOrders()
+
+          const orders = ref<any[]>([])
+
+          onMounted(async () => {
+            if (!clientUser.value) return
+            orders.value = await listForUser(clientUser.value.uid)
+          })
+          </script>
+          EOF
+
+      - name: Overwrite pages/orders/[id].vue
+        shell: bash
+        run: |
+          mkdir -p pages/orders
+          cat > pages/orders/[id].vue <<'EOF'
+          <template>
+            <div v-if="!order" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
+              Замовлення не знайдено або доступ заборонено.
+            </div>
+
+            <div v-else class="rounded-2xl border bg-white p-5 shadow-sm">
+              <h1 class="text-xl font-bold">Замовлення {{ order.id?.slice(-6) }}</h1>
+              <div class="mt-1 text-sm text-gray-600">
+                {{ new Date(order.createdAt).toLocaleString('uk-UA') }} • Аптека: {{ order.pharmacyCode }}
+              </div>
+
+              <div class="mt-4 grid gap-2">
+                <div v-for="it in order.items" :key="it.productId" class="flex justify-between rounded-xl border p-3 text-sm">
+                  <div>{{ it.name }} × {{ it.qty }}</div>
+                  <div class="font-semibold">{{ (it.price * it.qty).toFixed(2) }} грн</div>
+                </div>
+              </div>
+
+              <div class="mt-4 flex justify-between text-sm">
+                <span>Разом:</span>
+                <span class="text-lg font-bold">{{ order.total.toFixed(2) }} грн</span>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          await requireRole('client')
+
+          const route = useRoute()
+          const { clientUser } = useAuthFacade()
+          const { getById } = useOrders()
+
+          const order = ref<any | null>(null)
+
+          onMounted(async () => {
+            const o = await getById(String(route.params.id))
+            if (!o) return
+            if (!clientUser.value || o.userId !== clientUser.value.uid) return
+            order.value = o
+          })
+          </script>
+          EOF
+
+      # ===== PHARMACIST PAGES =====
+      - name: Overwrite pages/pharmacist/orders/index.vue
+        shell: bash
+        run: |
+          mkdir -p pages/pharmacist/orders
+          cat > pages/pharmacist/orders/index.vue <<'EOF'
+          <template>
+            <div class="rounded-2xl border bg-white p-5 shadow-sm">
+              <h1 class="text-xl font-bold">Замовлення моєї аптеки</h1>
+              <p class="mt-1 text-sm text-gray-600">
+                Ви бачите лише замовлення аптеки: <span class="font-semibold">{{ pharmacyCode }}</span>
+              </p>
+
+              <div v-if="loading" class="mt-4 text-sm text-gray-600">Завантаження...</div>
+
+              <div v-else class="mt-4 grid gap-3">
+                <NuxtLink
+                  v-for="o in orders"
+                  :key="o.id"
+                  :to="`/pharmacist/orders/${o.id}`"
+                  class="rounded-xl border p-3 hover:bg-gray-50"
+                >
+                  <div class="flex items-center justify-between">
+                    <div class="text-sm font-semibold">Замовлення {{ o.id?.slice(-6) }}</div>
+                    <div class="text-sm font-bold">{{ o.total.toFixed(2) }} грн</div>
+                  </div>
+                  <div class="mt-1 text-xs text-gray-500">
+                    {{ new Date(o.createdAt).toLocaleString('uk-UA') }} • Статус: {{ statusUa(o.status) }}
+                  </div>
+                </NuxtLink>
+
+                <div v-if="orders.length === 0" class="text-sm text-gray-600">
+                  Замовлень поки немає.
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          await requireRole('pharmacist')
+
+          const { pharmacyCode } = useAuthFacade()
+          const { listForPharmacy, loading } = useOrders()
+          const orders = ref<any[]>([])
+
+          function statusUa (s: string) {
+            if (s === 'issued') return 'видане'
+            if (s === 'canceled') return 'скасоване'
+            return 'нове'
+          }
+
+          onMounted(async () => {
+            if (!pharmacyCode.value) return
+            orders.value = await listForPharmacy(pharmacyCode.value)
+          })
+          </script>
+          EOF
+
+      - name: Overwrite pages/pharmacist/orders/[id].vue
+        shell: bash
+        run: |
+          cat > pages/pharmacist/orders/[id].vue <<'EOF'
+          <template>
+            <div v-if="!order" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
+              Замовлення не знайдено або доступ заборонено.
+            </div>
+
+            <div v-else class="rounded-2xl border bg-white p-5 shadow-sm">
+              <h1 class="text-xl font-bold">Замовлення {{ order.id?.slice(-6) }}</h1>
+              <div class="mt-1 text-sm text-gray-600">
+                {{ new Date(order.createdAt).toLocaleString('uk-UA') }} • Аптека: {{ order.pharmacyCode }}
+              </div>
+
+              <div class="mt-4 grid gap-2">
+                <div v-for="it in order.items" :key="it.productId" class="flex justify-between rounded-xl border p-3 text-sm">
+                  <div>{{ it.name }} × {{ it.qty }}</div>
+                  <div class="font-semibold">{{ (it.price * it.qty).toFixed(2) }} грн</div>
+                </div>
+              </div>
+
+              <div class="mt-4 flex items-center justify-between">
+                <div class="text-sm">Разом: <span class="text-lg font-bold">{{ order.total.toFixed(2) }} грн</span></div>
+                <div class="text-sm">Статус: <span class="font-semibold">{{ statusUa(order.status) }}</span></div>
+              </div>
+
+              <div class="mt-4 flex flex-wrap gap-2">
+                <UiButton :disabled="saving" @click="set('new')">Нове</UiButton>
+                <UiButton :disabled="saving" variant="primary" @click="set('issued')">Видане</UiButton>
+                <UiButton :disabled="saving" variant="danger" @click="set('canceled')">Скасоване</UiButton>
+              </div>
+
+              <AlertBox class="mt-4" :text="msg" :kind="msgKind" />
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import type { OrderStatus } from '~/composables/useOrders'
+
+          await requireRole('pharmacist')
+
+          const route = useRoute()
+          const { pharmacyCode } = useAuthFacade()
+          const { getById, setStatus } = useOrders()
+
+          const order = ref<any | null>(null)
+          const saving = ref(false)
+          const msg = ref('')
+          const msgKind = ref<'info'|'error'|'success'>('info')
+
+          function statusUa (s: string) {
+            if (s === 'issued') return 'видане'
+            if (s === 'canceled') return 'скасоване'
+            return 'нове'
+          }
+
+          onMounted(async () => {
+            const o = await getById(String(route.params.id))
+            if (!o) return
+            if (!pharmacyCode.value || o.pharmacyCode !== pharmacyCode.value) return
+            order.value = o
+          })
+
+          async function set (status: OrderStatus) {
+            if (!order.value?.id) return
+            saving.value = true
+            msg.value = ''
+            try {
+              await setStatus(order.value.id, status)
+              order.value.status = status
+              msgKind.value = 'success'
+              msg.value = 'Статус змінено.'
+            } catch (e: any) {
+              msgKind.value = 'error'
+              msg.value = e?.message || 'Не вдалося змінити статус.'
+            } finally {
+              saving.value = false
+            }
+          }
+          </script>
+          EOF
+
+      # ===== ADMIN PAGES =====
+      - name: Overwrite pages/admin/products.vue
+        shell: bash
+        run: |
+          mkdir -p pages/admin
+          cat > pages/admin/products.vue <<'EOF'
+          <template>
+            <div class="grid gap-6">
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-xl font-bold">Адмін • Товари (ліки)</h1>
+                <p class="mt-1 text-sm text-gray-600">CRUD товарів. Категорії фіксовані (2 рівні).</p>
+
+                <div class="mt-4">
+                  <UiButton variant="primary" @click="openCreate">Додати товар</UiButton>
+                </div>
+              </div>
+
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <div v-if="loading" class="text-sm text-gray-600">Завантаження...</div>
+
+                <div v-else class="grid gap-3">
+                  <div
+                    v-for="p in products"
+                    :key="p.id"
+                    class="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
+                  >
+                    <div class="min-w-[220px]">
+                      <div class="text-sm font-semibold">{{ p.name }}</div>
+                      <div class="text-xs text-gray-500">{{ p.parentCategory }} / {{ p.childCategory }}</div>
+                      <div class="text-xs text-gray-500">{{ p.price.toFixed(2) }} грн</div>
+                    </div>
+
+                    <div class="flex gap-2">
+                      <UiButton @click="openEdit(p)">Редагувати</UiButton>
+                      <UiButton variant="danger" @click="onDelete(p.id!)">Видалити</UiButton>
+                    </div>
+                  </div>
+
+                  <div v-if="products.length === 0" class="text-sm text-gray-600">
+                    Товарів поки немає.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Modal -->
+              <div v-if="showForm" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+                <div class="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-xl">
+                  <div class="flex items-center justify-between">
+                    <h2 class="text-lg font-semibold">{{ formMode === 'create' ? 'Додати товар' : 'Редагувати товар' }}</h2>
+                    <button class="rounded-xl border px-3 py-1 text-sm hover:bg-gray-50" @click="closeForm">✕</button>
+                  </div>
+
+                  <form class="mt-4 grid gap-3" @submit.prevent="save">
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Назва</span>
+                        <input v-model.trim="form.name" required class="rounded-xl border px-3 py-2" />
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Ціна (грн)</span>
+                        <input v-model.number="form.price" type="number" min="0.01" step="0.01" required class="rounded-xl border px-3 py-2" />
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Категорія (1 рівень)</span>
+                        <select v-model="form.parentCategory" required class="rounded-xl border px-3 py-2" @change="onParentChanged">
+                          <option value="" disabled>— Оберіть —</option>
+                          <option v-for="p in parents" :key="p" :value="p">{{ p }}</option>
+                        </select>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Підкатегорія (2 рівень)</span>
+                        <select v-model="form.childCategory" required class="rounded-xl border px-3 py-2" :disabled="!form.parentCategory">
+                          <option value="" disabled>— Оберіть —</option>
+                          <option v-for="c in children" :key="c" :value="c">{{ c }}</option>
+                        </select>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Виробник</span>
+                        <input v-model.trim="form.manufacturer" required class="rounded-xl border px-3 py-2" />
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Зображення (URL)</span>
+                        <input v-model.trim="form.imageUrl" class="rounded-xl border px-3 py-2" />
+                      </label>
+                    </div>
+
+                    <label class="grid gap-1">
+                      <span class="text-sm text-gray-700">Опис</span>
+                      <textarea v-model.trim="form.description" rows="5" required class="rounded-xl border px-3 py-2"></textarea>
+                    </label>
+
+                    <AlertBox :text="msg" :kind="msgKind" />
+
+                    <div class="flex justify-end gap-2">
+                      <UiButton @click="closeForm">Скасувати</UiButton>
+                      <UiButton type="submit" variant="primary" :disabled="saving">Зберегти</UiButton>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { CATEGORIES } from '~/data/categories'
+          import type { Product } from '~/composables/useProducts'
+
+          await requireRole('admin')
+
+          const { products, loading, fetchAll, create, update, remove } = useProducts()
+
+          const showForm = ref(false)
+          const formMode = ref<'create' | 'edit'>('create')
+          const editingId = ref<string | null>(null)
+
+          const parents = computed(() => Object.keys(CATEGORIES))
+          const children = computed(() => {
+            const p = form.parentCategory
+            if (!p) return []
+            return (CATEGORIES as any)[p] as string[]
+          })
+
+          const form = reactive<Product>({
+            name: '',
+            parentCategory: parents.value[0] || '',
+            childCategory: '',
+            manufacturer: '',
+            description: '',
+            price: 0,
+            imageUrl: ''
+          })
+
+          const saving = ref(false)
+          const msg = ref('')
+          const msgKind = ref<'info'|'error'|'success'>('info')
+
+          onMounted(async () => {
+            await fetchAll()
+          })
+
+          function openCreate () {
+            formMode.value = 'create'
+            editingId.value = null
+            form.name = ''
+            form.price = 0
+            form.parentCategory = parents.value[0] || ''
+            form.childCategory = ''
+            form.manufacturer = ''
+            form.description = ''
+            form.imageUrl = ''
+            showForm.value = true
+            msg.value = ''
+          }
+
+          function openEdit (p: Product) {
+            formMode.value = 'edit'
+            editingId.value = p.id || null
+            form.name = p.name
+            form.price = p.price
+            form.parentCategory = p.parentCategory
+            form.childCategory = p.childCategory
+            form.manufacturer = p.manufacturer
+            form.description = p.description
+            form.imageUrl = p.imageUrl
+            showForm.value = true
+            msg.value = ''
+          }
+
+          function closeForm () {
+            showForm.value = false
+          }
+
+          function onParentChanged () {
+            form.childCategory = ''
+          }
+
+          async function save () {
+            msg.value = ''
+            if (!form.childCategory) {
+              msgKind.value = 'error'
+              msg.value = 'Оберіть підкатегорію (2 рівень).'
+              return
+            }
+            if (!Number.isFinite(form.price) || form.price <= 0) {
+              msgKind.value = 'error'
+              msg.value = 'Ціна має бути > 0.'
+              return
+            }
+
+            saving.value = true
+            try {
+              const payload: Product = {
+                name: form.name,
+                parentCategory: form.parentCategory,
+                childCategory: form.childCategory,
+                manufacturer: form.manufacturer,
+                description: form.description,
+                price: Number(form.price),
+                imageUrl: form.imageUrl
+              }
+
+              if (formMode.value === 'create') {
+                await create(payload)
+              } else if (editingId.value) {
+                await update(editingId.value, payload)
+              }
+
+              msgKind.value = 'success'
+              msg.value = 'Збережено.'
+              await fetchAll()
+              showForm.value = false
+            } catch (e: any) {
+              msgKind.value = 'error'
+              msg.value = e?.message || 'Помилка збереження.'
+            } finally {
+              saving.value = false
+            }
+          }
+
+          async function onDelete (id: string) {
+            const ok = confirm('Видалити товар?')
+            if (!ok) return
+            try {
+              await remove(id)
+              await fetchAll()
+            } catch (e: any) {
+              alert(e?.message || 'Помилка видалення.')
+            }
+          }
+          </script>
+          EOF
+
+      - name: Overwrite pages/admin/pharmacies.vue
+        shell: bash
+        run: |
+          cat > pages/admin/pharmacies.vue <<'EOF'
+          <template>
+            <div class="rounded-2xl border bg-white p-5 shadow-sm">
+              <h1 class="text-xl font-bold">Адмін • Аптеки (фіксований перелік)</h1>
+              <p class="mt-1 text-sm text-gray-600">10 аптек з фіксованими кодами. CRUD не використовується.</p>
+
+              <div class="mt-4 grid gap-3">
+                <div v-for="p in PHARMACIES" :key="p.code" class="rounded-xl border p-3">
+                  <div class="text-sm font-semibold">{{ p.code }} — {{ p.name }}</div>
+                  <div class="text-xs text-gray-500">{{ p.address }} • {{ p.phone }}</div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { PHARMACIES } from '~/data/pharmacies'
+
+          await requireRole('admin')
+          </script>
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            middleware/auth.global.ts \
+            composables/requireRole.ts \
+            pages/catalog.vue \
+            pages/product/[id].vue \
+            pages/cart.vue \
+            pages/checkout.vue \
+            pages/orders.vue \
+            pages/orders/[id].vue \
+            pages/pharmacist/orders/index.vue \
+            pages/pharmacist/orders/[id].vue \
+            pages/admin/products.vue \
+            pages/admin/pharmacies.vue || true
+
+          git add -A middleware || true
+
+          git commit -m "TASK001-FIX2: fix redirects by removing role middlewares and guarding pages" || echo "No changes to commit"
+          git push
