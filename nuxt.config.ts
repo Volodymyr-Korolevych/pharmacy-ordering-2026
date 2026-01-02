@@ -4,9 +4,7 @@ export default defineNuxtConfig({
   css: ['~/assets/css/tailwind.css'],
   runtimeConfig: {
     // Server-only (НЕ потрапляє в браузер)
-    adminLogin: process.env.ADMIN_LOGIN || 'admin',
-    adminPassword: process.env.ADMIN_PASSWORD || 'admin123',
-    pharmacistPassword: process.env.PHARMACIST_PASSWORD || 'pharm123',
+
     // Public (потрапляє в браузер)
     public: {
       firebaseApiKey: process.env.NUXT_PUBLIC_FIREBASE_API_KEY || '',
@@ -15,6 +13,9 @@ export default defineNuxtConfig({
       firebaseStorageBucket: process.env.NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
       firebaseMessagingSenderId: process.env.NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
       firebaseAppId: process.env.NUXT_PUBLIC_FIREBASE_APP_ID || '',
+      adminLogin: process.env.NUXT_ADMIN_LOGIN || '',
+      adminPassword: process.env.NUXT_ADMIN_PASSWORD || '',
+      pharmacistPassword: process.env.NUXT_PHARMACIST_PASSWORD || '',
     }
   },
   app: {

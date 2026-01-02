@@ -21,6 +21,7 @@ export function useAuthFacade () {
   })
 
   const authKind = computed<AuthKind>(() => {
+    console.log('Computing authKind, fixedSession:', fixedSession.value, 'clientUser:', clientUser.value)
     if (fixedSession.value?.kind === 'admin') return 'admin'
     if (fixedSession.value?.kind === 'pharmacist') return 'pharmacist'
     if (clientUser.value) return 'client'
@@ -77,7 +78,8 @@ export function useAuthFacade () {
   }
 
   function fixedLoginAdmin (login: string, password: string): boolean {
-    const config = useRuntimeConfig()
+    const config = useRuntimeConfig().public
+    console.log('Trying admin login', config)
     if (login === config.adminLogin && password === config.adminPassword) {
       sessionCookie.value = JSON.stringify({ kind: 'admin' } satisfies AdminSession)
       clientUser.value = null
@@ -87,7 +89,7 @@ export function useAuthFacade () {
   }
 
   function fixedLoginPharmacist (login: string, password: string): { ok: boolean; pharmacyCode?: string } {
-    const config = useRuntimeConfig()
+    const config = useRuntimeConfig().public
     const m = /^apotheke(\d{3})$/.exec(login)
     if (!m) return { ok: false }
     // пароль один на всіх провізорів (простий дипломний варіант)
