@@ -1,0 +1,173 @@
+name: TASK001-FIX2 - Fix auth redirection (Firebase user sync + cookie path)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task001_fix2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Overwrite composables/useAuthFacade.ts
+        shell: bash
+        run: |
+          mkdir -p composables
+          cat > composables/useAuthFacade.ts <<'EOF'
+          import type { User } from 'firebase/auth'
+          import {
+            onAuthStateChanged,
+            signInWithEmailAndPassword,
+            createUserWithEmailAndPassword,
+            signOut
+          } from 'firebase/auth'
+
+          type AuthKind = 'none' | 'client' | 'admin' | 'pharmacist'
+
+          type AdminSession = { kind: 'admin' }
+          type PharmacistSession = { kind: 'pharmacist'; pharmacyCode: string }
+          type Session = AdminSession | PharmacistSession | null
+
+          export function useAuthFacade () {
+            const { $firebase } = useNuxtApp()
+
+            const clientUser = useState<User | null>('clientUser', () => null)
+            const authReady = useState<boolean>('authReady', () => false)
+
+            // ✅ ВАЖЛИВО: cookie має бути доступною з будь-якого маршруту
+            const sessionCookie = useCookie<string | null>('fixed_session', {
+              sameSite: 'lax',
+              path: '/'
+            })
+
+            const fixedSession = computed<Session>(() => {
+              if (!sessionCookie.value) return null
+              try { return JSON.parse(sessionCookie.value) as Session } catch { return null }
+            })
+
+            const authKind = computed<AuthKind>(() => {
+              if (fixedSession.value?.kind === 'admin') return 'admin'
+              if (fixedSession.value?.kind === 'pharmacist') return 'pharmacist'
+              if (clientUser.value) return 'client'
+              return 'none'
+            })
+
+            const pharmacyCode = computed<string | null>(() => {
+              if (fixedSession.value?.kind === 'pharmacist') return fixedSession.value.pharmacyCode
+              return null
+            })
+
+            function requireFirebase () {
+              if (!$firebase?.auth) {
+                throw new Error('Firebase is not configured. Please set NUXT_PUBLIC_FIREBASE_* env vars.')
+              }
+              return $firebase
+            }
+
+            async function ensureAuthReady (): Promise<void> {
+              if (process.server) return
+
+              // ✅ Якщо cookie вже є — ми готові (Firebase може бути навіть не налаштований)
+              if (fixedSession.value) {
+                authReady.value = true
+                return
+              }
+
+              // ✅ Якщо Firebase не налаштований — також ставимо ready (щоб /auth відкривався)
+              if (!$firebase?.auth) {
+                authReady.value = true
+                return
+              }
+
+              // ✅ Якщо вже ready, додатково синхронізуємо currentUser (на випадок race condition)
+              if (authReady.value) {
+                if (!clientUser.value && $firebase.auth.currentUser) {
+                  clientUser.value = $firebase.auth.currentUser
+                }
+                return
+              }
+
+              await new Promise<void>((resolve) => {
+                const unsub = onAuthStateChanged($firebase.auth, (u) => {
+                  clientUser.value = u
+                  authReady.value = true
+                  unsub()
+                  resolve()
+                })
+              })
+            }
+
+            // ✅ Фікс #1: одразу встановлюємо clientUser з результату signIn
+            async function clientLogin (email: string, password: string) {
+              const fb = requireFirebase()
+              const cred = await signInWithEmailAndPassword(fb.auth, email, password)
+              clientUser.value = cred.user
+              authReady.value = true
+            }
+
+            async function clientRegister (email: string, password: string) {
+              const fb = requireFirebase()
+              const cred = await createUserWithEmailAndPassword(fb.auth, email, password)
+              clientUser.value = cred.user
+              authReady.value = true
+            }
+
+            function fixedLoginAdmin (login: string, password: string): boolean {
+              const config = useRuntimeConfig()
+              if (login === config.adminLogin && password === config.adminPassword) {
+                sessionCookie.value = JSON.stringify({ kind: 'admin' } satisfies AdminSession)
+                clientUser.value = null
+                authReady.value = true
+                return true
+              }
+              return false
+            }
+
+            function fixedLoginPharmacist (login: string, password: string): { ok: boolean; pharmacyCode?: string } {
+              const config = useRuntimeConfig()
+              const m = /^apotheke(\d{3})$/.exec(login)
+              if (!m) return { ok: false }
+              if (password !== config.pharmacistPassword) return { ok: false }
+
+              const pharmacyCode = `apotheke${m[1]}`
+              sessionCookie.value = JSON.stringify({ kind: 'pharmacist', pharmacyCode } satisfies PharmacistSession)
+              clientUser.value = null
+              authReady.value = true
+              return { ok: true, pharmacyCode }
+            }
+
+            async function signOutAll () {
+              sessionCookie.value = null
+              if ($firebase?.auth) {
+                try { await signOut($firebase.auth) } catch {}
+              }
+              clientUser.value = null
+              authReady.value = true
+            }
+
+            return {
+              authKind,
+              pharmacyCode,
+              clientUser,
+              ensureAuthReady,
+              clientLogin,
+              clientRegister,
+              fixedLoginAdmin,
+              fixedLoginPharmacist,
+              signOutAll
+            }
+          }
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add composables/useAuthFacade.ts
+          git commit -m "TASK001-FIX2: fix auth redirects (sync firebase user + cookie path)" || echo "No changes to commit"
+          git push
