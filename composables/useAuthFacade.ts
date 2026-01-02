@@ -1,5 +1,10 @@
 import type { User } from 'firebase/auth'
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth'
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut
+} from 'firebase/auth'
 
 type AuthKind = 'none' | 'client' | 'admin' | 'pharmacist'
 
@@ -9,11 +14,15 @@ type Session = AdminSession | PharmacistSession | null
 
 export function useAuthFacade () {
   const { $firebase } = useNuxtApp()
+
   const clientUser = useState<User | null>('clientUser', () => null)
   const authReady = useState<boolean>('authReady', () => false)
 
-  // cookies for fixed accounts
-  const sessionCookie = useCookie<string | null>('fixed_session', { sameSite: 'lax' })
+  // ✅ ВАЖЛИВО: cookie має бути доступною з будь-якого маршруту
+  const sessionCookie = useCookie<string | null>('fixed_session', {
+    sameSite: 'lax',
+    path: '/'
+  })
 
   const fixedSession = computed<Session>(() => {
     if (!sessionCookie.value) return null
@@ -21,7 +30,6 @@ export function useAuthFacade () {
   })
 
   const authKind = computed<AuthKind>(() => {
-    console.log('Computing authKind, fixedSession:', fixedSession.value, 'clientUser:', clientUser.value)
     if (fixedSession.value?.kind === 'admin') return 'admin'
     if (fixedSession.value?.kind === 'pharmacist') return 'pharmacist'
     if (clientUser.value) return 'client'
@@ -42,17 +50,24 @@ export function useAuthFacade () {
 
   async function ensureAuthReady (): Promise<void> {
     if (process.server) return
-    if (authReady.value) return
 
-    // Fixed session may exist even without firebase configured
+    // ✅ Якщо cookie вже є — ми готові (Firebase може бути навіть не налаштований)
     if (fixedSession.value) {
       authReady.value = true
       return
     }
 
-    // If firebase not configured, still mark ready so app can show /auth
+    // ✅ Якщо Firebase не налаштований — також ставимо ready (щоб /auth відкривався)
     if (!$firebase?.auth) {
       authReady.value = true
+      return
+    }
+
+    // ✅ Якщо вже ready, додатково синхронізуємо currentUser (на випадок race condition)
+    if (authReady.value) {
+      if (!clientUser.value && $firebase.auth.currentUser) {
+        clientUser.value = $firebase.auth.currentUser
+      }
       return
     }
 
@@ -66,37 +81,42 @@ export function useAuthFacade () {
     })
   }
 
+  // ✅ Фікс #1: одразу встановлюємо clientUser з результату signIn
   async function clientLogin (email: string, password: string) {
     const fb = requireFirebase()
-    await signInWithEmailAndPassword(fb.auth, email, password)
-    // onAuthStateChanged will set clientUser
+    const cred = await signInWithEmailAndPassword(fb.auth, email, password)
+    clientUser.value = cred.user
+    authReady.value = true
   }
 
   async function clientRegister (email: string, password: string) {
     const fb = requireFirebase()
-    await createUserWithEmailAndPassword(fb.auth, email, password)
+    const cred = await createUserWithEmailAndPassword(fb.auth, email, password)
+    clientUser.value = cred.user
+    authReady.value = true
   }
 
   function fixedLoginAdmin (login: string, password: string): boolean {
-    const config = useRuntimeConfig().public
-    console.log('Trying admin login', config)
+    const config = useRuntimeConfig()
     if (login === config.adminLogin && password === config.adminPassword) {
       sessionCookie.value = JSON.stringify({ kind: 'admin' } satisfies AdminSession)
       clientUser.value = null
+      authReady.value = true
       return true
     }
     return false
   }
 
   function fixedLoginPharmacist (login: string, password: string): { ok: boolean; pharmacyCode?: string } {
-    const config = useRuntimeConfig().public
+    const config = useRuntimeConfig()
     const m = /^apotheke(\d{3})$/.exec(login)
     if (!m) return { ok: false }
-    // пароль один на всіх провізорів (простий дипломний варіант)
     if (password !== config.pharmacistPassword) return { ok: false }
+
     const pharmacyCode = `apotheke${m[1]}`
     sessionCookie.value = JSON.stringify({ kind: 'pharmacist', pharmacyCode } satisfies PharmacistSession)
     clientUser.value = null
+    authReady.value = true
     return { ok: true, pharmacyCode }
   }
 
@@ -106,6 +126,7 @@ export function useAuthFacade () {
       try { await signOut($firebase.auth) } catch {}
     }
     clientUser.value = null
+    authReady.value = true
   }
 
   return {
