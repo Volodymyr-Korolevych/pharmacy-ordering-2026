@@ -1,7 +1,9 @@
 <template>
   <div class="rounded-2xl border bg-white p-5 shadow-sm">
     <h1 class="text-xl font-bold">Замовлення моєї аптеки</h1>
-    <p class="mt-1 text-sm text-gray-600">Ви бачите лише замовлення аптеки: <span class="font-semibold">{{ pharmacyCode }}</span></p>
+    <p class="mt-1 text-sm text-gray-600">
+      Ви бачите лише замовлення аптеки: <span class="font-semibold">{{ pharmacyCode }}</span>
+    </p>
 
     <div v-if="loading" class="mt-4 text-sm text-gray-600">Завантаження...</div>
 
@@ -29,7 +31,7 @@
 </template>
 
 <script setup lang="ts">
-definePageMeta({ middleware: ['pharmacist'] })
+await requireRole('pharmacist')
 
 const { pharmacyCode } = useAuthFacade()
 const { listForPharmacy, loading } = useOrders()

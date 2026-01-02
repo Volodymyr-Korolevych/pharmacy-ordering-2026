@@ -14,5 +14,6 @@
 
 <script setup lang="ts">
 import { PHARMACIES } from '~/data/pharmacies'
-definePageMeta({ middleware: ['admin'] })
+
+await requireRole('admin')
 </script>

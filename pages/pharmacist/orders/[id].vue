@@ -33,7 +33,8 @@
 
 <script setup lang="ts">
 import type { OrderStatus } from '~/composables/useOrders'
-definePageMeta({ middleware: ['pharmacist'] })
+
+await requireRole('pharmacist')
 
 const route = useRoute()
 const { pharmacyCode } = useAuthFacade()

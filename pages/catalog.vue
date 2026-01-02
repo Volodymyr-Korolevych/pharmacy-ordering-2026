@@ -39,7 +39,8 @@
 
 <script setup lang="ts">
 import { CATEGORIES } from '~/data/categories'
-definePageMeta({ middleware: ['client'] })
+
+await requireRole('client')
 
 const { products, loading, fetchAll } = useProducts()
 
