@@ -25,7 +25,8 @@
 
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
-definePageMeta({ middleware: ['client'] })
+
+await requireRole('client')
 
 const route = useRoute()
 const { products, fetchAll } = useProducts()

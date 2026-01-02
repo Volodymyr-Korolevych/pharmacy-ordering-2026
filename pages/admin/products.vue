@@ -104,7 +104,8 @@
 <script setup lang="ts">
 import { CATEGORIES } from '~/data/categories'
 import type { Product } from '~/composables/useProducts'
-definePageMeta({ middleware: ['admin'] })
+
+await requireRole('admin')
 
 const { products, loading, fetchAll, create, update, remove } = useProducts()
 

@@ -24,7 +24,7 @@
 </template>
 
 <script setup lang="ts">
-definePageMeta({ middleware: ['client'] })
+await requireRole('client')
 
 const route = useRoute()
 const { clientUser } = useAuthFacade()

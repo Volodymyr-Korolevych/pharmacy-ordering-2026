@@ -29,7 +29,7 @@
 </template>
 
 <script setup lang="ts">
-definePageMeta({ middleware: ['client'] })
+await requireRole('client')
 
 const { clientUser } = useAuthFacade()
 const { listForUser, loading } = useOrders()

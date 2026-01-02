@@ -36,7 +36,8 @@
 <script setup lang="ts">
 import { PHARMACIES } from '~/data/pharmacies'
 import { useCartStore } from '~/stores/cart'
-definePageMeta({ middleware: ['client'] })
+
+await requireRole('client')
 
 const cart = useCartStore()
 const { clientUser } = useAuthFacade()

@@ -46,7 +46,8 @@
 
 <script setup lang="ts">
 import { useCartStore } from '~/stores/cart'
-definePageMeta({ middleware: ['client'] })
+
+await requireRole('client')
 
 const cart = useCartStore()
 
