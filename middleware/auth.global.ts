@@ -1,5 +1,4 @@
 export default defineNuxtRouteMiddleware(async (to) => {
-  // /auth завжди доступний
   if (to.path === '/auth') return
 
   const { authKind, ensureAuthReady } = useAuthFacade()
@@ -8,5 +7,4 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (authKind.value === 'none') {
     return navigateTo('/auth')
   }
-  
 })
