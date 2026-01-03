@@ -1,0 +1,215 @@
+name: TASK001-FIX3 - Fix fixed_session cookie typing + SSR-safe role guard
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task001_fix3:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Overwrite composables/useAuthFacade.ts
+        shell: bash
+        run: |
+          mkdir -p composables
+          cat > composables/useAuthFacade.ts <<'EOF'
+          import type { User } from 'firebase/auth'
+          import {
+            onAuthStateChanged,
+            signInWithEmailAndPassword,
+            createUserWithEmailAndPassword,
+            signOut
+          } from 'firebase/auth'
+
+          export type AuthKind = 'none' | 'client' | 'admin' | 'pharmacist'
+
+          export type AdminSession = { kind: 'admin' }
+          export type PharmacistSession = { kind: 'pharmacist'; pharmacyCode: string }
+          export type Session = AdminSession | PharmacistSession | null
+
+          export function useAuthFacade () {
+            const { $firebase } = useNuxtApp()
+
+            const clientUser = useState<User | null>('clientUser', () => null)
+            const authReady = useState<boolean>('authReady', () => false)
+
+            // ✅ Зберігаємо cookie як ОБ'ЄКТ, без JSON.stringify/parse
+            // ✅ path:'/' — щоб читалась на всіх сторінках
+            const fixedSession = useCookie<Session>('fixed_session', {
+              default: () => null,
+              sameSite: 'lax',
+              path: '/'
+            })
+
+            const authKind = computed<AuthKind>(() => {
+              if (fixedSession.value?.kind === 'admin') return 'admin'
+              if (fixedSession.value?.kind === 'pharmacist') return 'pharmacist'
+              if (clientUser.value) return 'client'
+              return 'none'
+            })
+
+            const pharmacyCode = computed<string | null>(() => {
+              if (fixedSession.value?.kind === 'pharmacist') return fixedSession.value.pharmacyCode
+              return null
+            })
+
+            function requireFirebase () {
+              if (!$firebase?.auth) {
+                throw new Error('Firebase is not configured. Please set NUXT_PUBLIC_FIREBASE_* env vars.')
+              }
+              return $firebase
+            }
+
+            async function ensureAuthReady (): Promise<void> {
+              // На сервері Firebase state не потрібен.
+              // fixedSession з cookie доступний і на SSR.
+              if (process.server) return
+
+              // Якщо є fixedSession — ми вже "готові"
+              if (fixedSession.value) {
+                authReady.value = true
+                return
+              }
+
+              // Якщо Firebase не налаштований — теж ready (щоб /auth працював)
+              if (!$firebase?.auth) {
+                authReady.value = true
+                return
+              }
+
+              // Якщо вже ready — підстрахуємось currentUser
+              if (authReady.value) {
+                if (!clientUser.value && $firebase.auth.currentUser) {
+                  clientUser.value = $firebase.auth.currentUser
+                }
+                return
+              }
+
+              await new Promise<void>((resolve) => {
+                const unsub = onAuthStateChanged($firebase.auth, (u) => {
+                  clientUser.value = u
+                  authReady.value = true
+                  unsub()
+                  resolve()
+                })
+              })
+            }
+
+            // ✅ Фікс редіректа: виставляємо clientUser одразу
+            async function clientLogin (email: string, password: string) {
+              const fb = requireFirebase()
+              const cred = await signInWithEmailAndPassword(fb.auth, email, password)
+              clientUser.value = cred.user
+              authReady.value = true
+            }
+
+            async function clientRegister (email: string, password: string) {
+              const fb = requireFirebase()
+              const cred = await createUserWithEmailAndPassword(fb.auth, email, password)
+              clientUser.value = cred.user
+              authReady.value = true
+            }
+
+            function fixedLoginAdmin (login: string, password: string): boolean {
+              const config = useRuntimeConfig()
+              if (login === config.adminLogin && password === config.adminPassword) {
+                fixedSession.value = { kind: 'admin' }
+                clientUser.value = null
+                authReady.value = true
+                return true
+              }
+              return false
+            }
+
+            function fixedLoginPharmacist (login: string, password: string): { ok: boolean; pharmacyCode?: string } {
+              const config = useRuntimeConfig()
+              const m = /^apotheke(\d{3})$/.exec(login)
+              if (!m) return { ok: false }
+              if (password !== config.pharmacistPassword) return { ok: false }
+
+              const pharmacyCode = `apotheke${m[1]}`
+              fixedSession.value = { kind: 'pharmacist', pharmacyCode }
+              clientUser.value = null
+              authReady.value = true
+              return { ok: true, pharmacyCode }
+            }
+
+            async function signOutAll () {
+              fixedSession.value = null
+              if ($firebase?.auth) {
+                try { await signOut($firebase.auth) } catch {}
+              }
+              clientUser.value = null
+              authReady.value = true
+            }
+
+            return {
+              authKind,
+              pharmacyCode,
+              clientUser,
+              fixedSession,
+              ensureAuthReady,
+              clientLogin,
+              clientRegister,
+              fixedLoginAdmin,
+              fixedLoginPharmacist,
+              signOutAll
+            }
+          }
+          EOF
+
+      - name: Overwrite middleware/auth.global.ts
+        shell: bash
+        run: |
+          mkdir -p middleware
+          cat > middleware/auth.global.ts <<'EOF'
+          export default defineNuxtRouteMiddleware(async (to) => {
+            if (to.path === '/auth') return
+
+            const { authKind, ensureAuthReady } = useAuthFacade()
+            await ensureAuthReady()
+
+            if (authKind.value === 'none') {
+              return navigateTo('/auth')
+            }
+          })
+          EOF
+
+      - name: Overwrite composables/requireRole.ts
+        shell: bash
+        run: |
+          mkdir -p composables
+          cat > composables/requireRole.ts <<'EOF'
+          import type { AuthKind } from '~/composables/useAuthFacade'
+
+          function startRouteFor(kind: AuthKind) {
+            if (kind === 'admin') return '/admin/products'
+            if (kind === 'pharmacist') return '/pharmacist/orders'
+            if (kind === 'client') return '/catalog'
+            return '/auth'
+          }
+
+          export async function requireRole(expected: Exclude<AuthKind, 'none'>) {
+            const { authKind, ensureAuthReady } = useAuthFacade()
+            await ensureAuthReady()
+
+            if (authKind.value === expected) return
+
+            // Якщо залогінений не тією роллю — ведемо у "свій" розділ
+            return navigateTo(startRouteFor(authKind.value))
+          }
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add composables/useAuthFacade.ts middleware/auth.global.ts composables/requireRole.ts
+          git commit -m "TASK001-FIX3: store fixed_session as typed object (no JSON.parse) + SSR safe" || echo "No changes to commit"
+          git push
