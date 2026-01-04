@@ -40,7 +40,10 @@
 <script setup lang="ts">
 import { CATEGORIES } from '~/data/categories'
 
-await requireRole('client')
+onMounted(async () => {
+  document.title = 'Каталог ліків'
+  await requireRole('client')
+})
 
 const { products, loading, fetchAll } = useProducts()
 

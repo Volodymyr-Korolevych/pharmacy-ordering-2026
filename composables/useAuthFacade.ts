@@ -96,7 +96,7 @@ export function useAuthFacade () {
   }
 
   function fixedLoginAdmin (login: string, password: string): boolean {
-    const config = useRuntimeConfig()
+    const config = useRuntimeConfig().public
     if (login === config.adminLogin && password === config.adminPassword) {
       fixedSession.value = { kind: 'admin' }
       clientUser.value = null
@@ -107,7 +107,7 @@ export function useAuthFacade () {
   }
 
   function fixedLoginPharmacist (login: string, password: string): { ok: boolean; pharmacyCode?: string } {
-    const config = useRuntimeConfig()
+    const config = useRuntimeConfig().public
     const m = /^apotheke(\d{3})$/.exec(login)
     if (!m) return { ok: false }
     if (password !== config.pharmacistPassword) return { ok: false }
