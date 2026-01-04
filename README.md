@@ -120,3 +120,81 @@ vercel
 
 ---
 **Далі ми будемо робити зміни як `TASK00x` у вигляді YAML для `.github/workflows` з повним перезаписом файлів.**
+
+---
+
+## Seeding товарів у Firestore (одноразово)
+
+Цей проєкт має скрипт, який **згенерує товари для всіх підкатегорій** (4 шт. на кожну) і запише у колекцію `products`.
+
+### 1) Створи Service Account Key (для Admin SDK)
+Firebase Console → Project settings → Service accounts → **Generate new private key**  
+Збережи файл, напр. `serviceAccountKey.json`.
+
+### 2) Експорт змінних оточення
+**Windows PowerShell:**
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\serviceAccountKey.json"
+$env:FIREBASE_PROJECT_ID="your-project-id"
+```
+
+**macOS/Linux:**
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/serviceAccountKey.json"
+export FIREBASE_PROJECT_ID="your-project-id"
+```
+
+### 3) Запуск
+```bash
+npm install
+npm run seed:products
+```
+
+### 4) Зображення
+У кожного товару буде поле `imagePath` типу:
+`products/<slug>.jpg`
+
+Ти зможеш завантажити файли в Firebase Storage саме під ці шляхи.
+Після цього можна зробити окремий TASK, який:
+- зчитує `imagePath`
+- генерує `downloadURL`
+- записує в `imageUrl`, щоб картинки відображались у UI.
+
+---
+
+## Seeding товарів у Firestore (одноразово)
+
+Цей проєкт має скрипт, який **згенерує товари для всіх підкатегорій** (4 шт. на кожну) і запише у колекцію `products`.
+
+### 1) Створи Service Account Key (для Admin SDK)
+Firebase Console → Project settings → Service accounts → **Generate new private key**  
+Збережи файл, напр. `serviceAccountKey.json`.
+
+### 2) Експорт змінних оточення
+**Windows PowerShell:**
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\serviceAccountKey.json"
+$env:FIREBASE_PROJECT_ID="your-project-id"
+```
+
+**macOS/Linux:**
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS="/path/serviceAccountKey.json"
+export FIREBASE_PROJECT_ID="your-project-id"
+```
+
+### 3) Запуск
+```bash
+npm install
+npm run seed:products
+```
+
+### 4) Зображення
+У кожного товару буде поле `imagePath` типу:
+`products/<slug>.jpg`
+
+Ти зможеш завантажити файли в Firebase Storage саме під ці шляхи.
+Після цього можна зробити окремий TASK, який:
+- зчитує `imagePath`
+- генерує `downloadURL`
+- записує в `imageUrl`, щоб картинки відображались у UI.
