@@ -8,7 +8,8 @@
     "preview": "nuxt preview",
     "lint": "eslint .",
     "typecheck": "nuxi typecheck",
-    "seed:pharmacies": "node scripts/seed-pharmacies.mjs"
+    "seed:pharmacies": "node scripts/seed-pharmacies.mjs",
+    "seed:products": "node scripts/seed-products.mjs"
   },
   "dependencies": {
     "nuxt": "^3.12.4",
@@ -20,6 +21,7 @@
     "@nuxtjs/tailwindcss": "^6.12.1",
     "eslint": "^9.9.0",
     "@eslint/js": "^9.9.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "firebase-admin": "^12.5.0"
   }
 }
