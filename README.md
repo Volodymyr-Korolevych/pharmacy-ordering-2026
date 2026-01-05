@@ -198,3 +198,24 @@ npm run seed:products
 - зчитує `imagePath`
 - генерує `downloadURL`
 - записує в `imageUrl`, щоб картинки відображались у UI.
+
+---
+
+## Локальні demo-картинки для seeded товарів (без Storage)
+
+Для диплома можна тримати картинки локально (в репозиторії), щоб каталог виглядав “живим”.
+Для цього є скрипт, який згенерує **SVG-заглушки** для всіх товарів у Firestore і збереже їх в `public/products`.
+
+### Потрібно (як і для seed):
+- `GOOGLE_APPLICATION_CREDENTIALS` — шлях до serviceAccountKey.json
+- `FIREBASE_PROJECT_ID` — id firebase project
+
+### Запуск
+```bash
+npm install
+npm run gen:images
+```
+
+Після цього у каталозі `public/products/` з'являться файли `*.svg`, а UI покаже їх як фолбек, якщо `imageUrl` порожній.
+
+> Наступний крок: для адміна додамо завантаження реального зображення у Firebase Storage при додаванні/редагуванні товару.
