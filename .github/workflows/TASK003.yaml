@@ -1,0 +1,335 @@
+name: TASK003 - Local demo images (generate 200 placeholders) + UI fallback
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task003:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Add scripts + update UI fallback
+        shell: bash
+        run: |
+          # package.json: додаємо firebase-admin (як devDependency) і скрипт
+          node - <<'NODE'
+          const fs = require('fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json','utf8'))
+          pkg.devDependencies = pkg.devDependencies || {}
+          if (!pkg.devDependencies['firebase-admin']) pkg.devDependencies['firebase-admin'] = '^12.5.0'
+          pkg.scripts = pkg.scripts || {}
+          pkg.scripts['gen:images'] = 'node scripts/generate-local-product-images.mjs'
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
+          NODE
+
+          # scripts/generate-local-product-images.mjs
+          mkdir -p scripts
+          cat > scripts/generate-local-product-images.mjs <<'EOF'
+          /**
+           * Generate local demo SVG images for all products in Firestore.
+           * Output: public/products/<slug>.svg
+           *
+           * Needs:
+           *   GOOGLE_APPLICATION_CREDENTIALS = path to service account json
+           *   FIREBASE_PROJECT_ID = your firebase project id
+           *
+           * Run:
+           *   npm i
+           *   npm run gen:images
+           */
+
+          import admin from 'firebase-admin'
+          import fs from 'node:fs'
+          import path from 'node:path'
+
+          const projectId = process.env.FIREBASE_PROJECT_ID
+          if (!projectId) {
+            console.error('Missing env FIREBASE_PROJECT_ID')
+            process.exit(1)
+          }
+
+          if (!admin.apps.length) {
+            admin.initializeApp({
+              credential: admin.credential.applicationDefault(),
+              projectId
+            })
+          }
+
+          const db = admin.firestore()
+          const outDir = path.resolve('public', 'products')
+          fs.mkdirSync(outDir, { recursive: true })
+
+          function escapeXml(s='') {
+            return String(s)
+              .replaceAll('&','&amp;')
+              .replaceAll('<','&lt;')
+              .replaceAll('>','&gt;')
+              .replaceAll('"','&quot;')
+              .replaceAll("'",'&apos;')
+          }
+
+          function wrapText(str, maxLen=28) {
+            const words = String(str).split(' ')
+            const lines = []
+            let line = ''
+            for (const w of words) {
+              const test = (line ? line + ' ' : '') + w
+              if (test.length > maxLen) {
+                if (line) lines.push(line)
+                line = w
+              } else {
+                line = test
+              }
+            }
+            if (line) lines.push(line)
+            return lines.slice(0, 3) // max 3 lines
+          }
+
+          function svgTemplate({ title, subtitle, price, tag }) {
+            const tLines = wrapText(title, 26)
+            const sLines = wrapText(subtitle, 34)
+
+            const tY = 86
+            const tStep = 34
+
+            const titleTspans = tLines.map((l, i) =>
+              `<tspan x="40" y="${tY + i*tStep}">${escapeXml(l)}</tspan>`
+            ).join('')
+
+            const subStartY = 210
+            const subStep = 26
+            const subTspans = sLines.map((l, i) =>
+              `<tspan x="40" y="${subStartY + i*subStep}">${escapeXml(l)}</tspan>`
+            ).join('')
+
+            return `<?xml version="1.0" encoding="UTF-8"?>
+          <svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+            <defs>
+              <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+                <stop offset="0%" stop-color="#ecfdf5"/>
+                <stop offset="100%" stop-color="#f0f9ff"/>
+              </linearGradient>
+              <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity="0.12"/>
+              </filter>
+            </defs>
+
+            <rect x="0" y="0" width="800" height="800" fill="url(#g)"/>
+            <rect x="48" y="48" width="704" height="704" rx="42" fill="#ffffff" filter="url(#shadow)"/>
+
+            <rect x="80" y="80" width="640" height="96" rx="28" fill="#ecfdf5" stroke="#a7f3d0"/>
+            <text x="110" y="142" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="700" fill="#065f46">
+              ${escapeXml(tag)}
+            </text>
+
+            <text font-family="Inter, Arial, sans-serif" font-size="44" font-weight="800" fill="#111827">
+              ${titleTspans}
+            </text>
+
+            <text font-family="Inter, Arial, sans-serif" font-size="24" font-weight="500" fill="#374151">
+              ${subTspans}
+            </text>
+
+            <rect x="80" y="620" width="640" height="96" rx="28" fill="#f9fafb" stroke="#e5e7eb"/>
+            <text x="110" y="682" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700" fill="#111827">
+              ${escapeXml(price)}
+            </text>
+
+            <text x="690" y="682" text-anchor="end" font-family="Inter, Arial, sans-serif" font-size="18" fill="#6b7280">
+              demo image
+            </text>
+          </svg>`
+          }
+
+          function slugFromImagePath(imagePath) {
+            // expected: products/<slug>.jpg
+            if (!imagePath) return null
+            const m = /^products\/(.+)\.jpg$/.exec(imagePath)
+            return m ? m[1] : null
+          }
+
+          async function main() {
+            console.log('Generating local demo images from Firestore products...')
+            const snap = await db.collection('products').get()
+            console.log(`Found ${snap.size} products.`)
+
+            let n = 0
+            for (const doc of snap.docs) {
+              const p = doc.data()
+              const slug = slugFromImagePath(p.imagePath)
+              if (!slug) continue
+
+              const file = path.join(outDir, `${slug}.svg`)
+              const svg = svgTemplate({
+                title: p.name || 'Товар',
+                subtitle: `${p.parentCategory || ''} / ${p.childCategory || ''}`,
+                price: `${Number(p.price || 0).toFixed(2)} грн`,
+                tag: 'Аптека • Самовивіз'
+              })
+              fs.writeFileSync(file, svg, 'utf8')
+              n++
+            }
+
+            console.log(`DONE. Generated ${n} SVG images in public/products/`)
+            console.log('UI will show them as fallback when imageUrl is empty.')
+          }
+
+          main().catch((e) => {
+            console.error(e)
+            process.exit(1)
+          })
+          EOF
+
+          # створюємо папку public/products
+          mkdir -p public/products
+          echo "# generated locally" > public/products/.gitkeep
+
+          # --- UI fallback: якщо imageUrl пустий, показуємо локальний SVG з imagePath ---
+          # ProductCard.vue (якщо існує)
+          if [ -f components/ProductCard.vue ]; then
+            cat > components/ProductCard.vue <<'EOF'
+          <template>
+            <div class="rounded-2xl border bg-white p-4 shadow-sm">
+              <NuxtLink :to="`/product/${product.id}`" class="block">
+                <div class="aspect-[4/3] overflow-hidden rounded-xl bg-gray-100">
+                  <img v-if="imgSrc" :src="imgSrc" class="h-full w-full object-cover" alt="" />
+                </div>
+
+                <div class="mt-3 text-sm text-gray-500">{{ product.parentCategory }} / {{ product.childCategory }}</div>
+                <div class="mt-1 text-base font-semibold">{{ product.name }}</div>
+                <div class="mt-1 text-sm text-gray-600">{{ product.manufacturer }}</div>
+
+                <div class="mt-3 flex items-center justify-between">
+                  <div class="text-lg font-bold">{{ product.price.toFixed(2) }} грн</div>
+                  <UiButton @click.prevent="addToCart">Додати</UiButton>
+                </div>
+              </NuxtLink>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import type { Product } from '~/composables/useProducts'
+          import { useCartStore } from '~/stores/cart'
+
+          const props = defineProps<{ product: Product & { imagePath?: string } }>()
+          const cart = useCartStore()
+
+          const imgSrc = computed(() => {
+            if (props.product.imageUrl) return props.product.imageUrl
+            if (props.product.imagePath) return '/' + String(props.product.imagePath).replace(/\.jpg$/i, '.svg')
+            return ''
+          })
+
+          function addToCart () {
+            cart.add({
+              productId: props.product.id!,
+              name: props.product.name,
+              price: props.product.price,
+              imageUrl: imgSrc.value
+            }, 1)
+          }
+          </script>
+          EOF
+          fi
+
+          # product page fallback (перезаписуємо тільки частину, але ти просила повний файл — тому перезапишемо файл цілком)
+          mkdir -p pages/product
+          cat > pages/product/[id].vue <<'EOF'
+          <template>
+            <div v-if="!product" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
+              Товар не знайдено.
+            </div>
+
+            <div v-else class="grid gap-6 md:grid-cols-[280px_1fr]">
+              <div class="overflow-hidden rounded-2xl border bg-white p-4 shadow-sm">
+                <div class="aspect-square overflow-hidden rounded-xl bg-gray-100">
+                  <img v-if="imgSrc" :src="imgSrc" class="h-full w-full object-cover" alt="" />
+                </div>
+                <div class="mt-4 text-sm text-gray-500">{{ product.parentCategory }} / {{ product.childCategory }}</div>
+                <div class="mt-2 text-2xl font-bold">{{ product.price.toFixed(2) }} грн</div>
+                <UiButton class="mt-4 w-full" variant="primary" @click="add">Додати в кошик</UiButton>
+              </div>
+
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-2xl font-bold">{{ product.name }}</h1>
+                <div class="mt-2 text-sm text-gray-600">Виробник: <span class="font-medium">{{ product.manufacturer }}</span></div>
+                <p class="mt-4 whitespace-pre-line text-sm leading-6 text-gray-800">
+                  {{ product.description }}
+                </p>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { useCartStore } from '~/stores/cart'
+
+          const route = useRoute()
+          const { products, fetchAll } = useProducts()
+          const cart = useCartStore()
+
+          const product = computed(() => products.value.find(p => p.id === String(route.params.id)) as any)
+
+          const imgSrc = computed(() => {
+            if (!product.value) return ''
+            if (product.value.imageUrl) return product.value.imageUrl
+            if (product.value.imagePath) return '/' + String(product.value.imagePath).replace(/\.jpg$/i, '.svg')
+            return ''
+          })
+
+          onMounted(async () => {
+            // role guard client-only (щоб не ловити 500 на SSR)
+            await requireRole('client')
+            if (products.value.length === 0) await fetchAll()
+          })
+
+          function add () {
+            if (!product.value?.id) return
+            cart.add({
+              productId: product.value.id,
+              name: product.value.name,
+              price: product.value.price,
+              imageUrl: imgSrc.value
+            }, 1)
+            navigateTo('/cart')
+          }
+          </script>
+          EOF
+
+          # README інструкції
+          cat >> README.md <<'EOF'
+
+          ---
+
+          ## Локальні demo-картинки для seeded товарів (без Storage)
+
+          Для диплома можна тримати картинки локально (в репозиторії), щоб каталог виглядав “живим”.
+          Для цього є скрипт, який згенерує **SVG-заглушки** для всіх товарів у Firestore і збереже їх в `public/products`.
+
+          ### Потрібно (як і для seed):
+          - `GOOGLE_APPLICATION_CREDENTIALS` — шлях до serviceAccountKey.json
+          - `FIREBASE_PROJECT_ID` — id firebase project
+
+          ### Запуск
+          ```bash
+          npm install
+          npm run gen:images
+          ```
+
+          Після цього у каталозі `public/products/` з'являться файли `*.svg`, а UI покаже їх як фолбек, якщо `imageUrl` порожній.
+
+          > Наступний крок: для адміна додамо завантаження реального зображення у Firebase Storage при додаванні/редагуванні товару.
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json scripts/generate-local-product-images.mjs public/products/.gitkeep README.md pages/product/[id].vue components/ProductCard.vue || true
+          git commit -m "TASK003: local demo images (SVG placeholders) + UI fallback" || echo "No changes to commit"
+          git push

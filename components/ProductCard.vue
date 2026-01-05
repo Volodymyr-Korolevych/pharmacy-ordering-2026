@@ -1,22 +1,19 @@
 <template>
   <div class="rounded-2xl border bg-white p-4 shadow-sm">
-    <div class="flex gap-4">
-      <div class="h-20 w-20 overflow-hidden rounded-xl bg-gray-100">
-        <img v-if="product.imageUrl" :src="product.imageUrl" class="h-full w-full object-cover" alt="" />
+    <NuxtLink :to="`/product/${product.id}`" class="block">
+      <div class="aspect-[4/3] overflow-hidden rounded-xl bg-gray-100">
+        <img v-if="imgSrc" :src="imgSrc" class="h-full w-full object-cover" alt="" />
       </div>
-      <div class="flex-1">
-        <NuxtLink :to="`/product/${product.id}`" class="font-semibold hover:underline">
-          {{ product.name }}
-        </NuxtLink>
-        <div class="mt-1 text-xs text-gray-500">
-          {{ product.parentCategory }} / {{ product.childCategory }}
-        </div>
-        <div class="mt-2 flex items-center justify-between">
-          <div class="text-sm font-semibold">{{ product.price.toFixed(2) }} грн</div>
-          <UiButton variant="primary" @click="addToCart">Додати</UiButton>
-        </div>
+
+      <div class="mt-3 text-sm text-gray-500">{{ product.parentCategory }} / {{ product.childCategory }}</div>
+      <div class="mt-1 text-base font-semibold">{{ product.name }}</div>
+      <div class="mt-1 text-sm text-gray-600">{{ product.manufacturer }}</div>
+
+      <div class="mt-3 flex items-center justify-between">
+        <div class="text-lg font-bold">{{ product.price.toFixed(2) }} грн</div>
+        <UiButton @click.prevent="addToCart">Додати</UiButton>
       </div>
-    </div>
+    </NuxtLink>
   </div>
 </template>
 
@@ -24,16 +21,21 @@
 import type { Product } from '~/composables/useProducts'
 import { useCartStore } from '~/stores/cart'
 
-const props = defineProps<{ product: Product }>()
+const props = defineProps<{ product: Product & { imagePath?: string } }>()
 const cart = useCartStore()
 
+const imgSrc = computed(() => {
+  if (props.product.imageUrl) return props.product.imageUrl
+  if (props.product.imagePath) return '/' + String(props.product.imagePath).replace(/\.jpg$/i, '.svg')
+  return ''
+})
+
 function addToCart () {
-  if (!props.product.id) return
   cart.add({
-    productId: props.product.id,
+    productId: props.product.id!,
     name: props.product.name,
     price: props.product.price,
-    imageUrl: props.product.imageUrl
+    imageUrl: imgSrc.value
   }, 1)
 }
 </script>
