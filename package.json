@@ -10,7 +10,8 @@
     "typecheck": "nuxi typecheck",
     "seed:pharmacies": "node scripts/seed-pharmacies.mjs",
     "seed:products": "node scripts/seed-products.mjs",
-    "gen:images": "node scripts/generate-local-product-images.mjs"
+    "gen:images": "node scripts/generate-local-product-images.mjs",
+    "export:image-links": "node scripts/export-products-image-links.mjs"
   },
   "dependencies": {
     "nuxt": "^3.12.4",
