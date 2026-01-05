@@ -237,3 +237,21 @@ npm run export:image-links
 ```
 
 Результат: файл `product_images.csv` (productId → image_direct_url → commons_file_page → license).
+
+---
+
+## Таблиця лінків на зображення товарів (Wikimedia Commons)
+
+Скрипт читає `products` з Firestore і для кожного товару намагається знайти зображення на Wikimedia Commons
+(перевага — вільні ліцензії) та генерує `product_images.csv`.
+
+### Запуск (PowerShell)
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\serviceAccountKey.json"
+$env:FIREBASE_PROJECT_ID="your-project-id"
+
+npm i
+npm run export:image-links
+```
+
+Результат: файл `product_images.csv` (productId → image_direct_url → commons_file_page → license).
