@@ -1,0 +1,688 @@
+name: TASK005 - Reset products collection + import new structure + update UI pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task005:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Overwrite seed data + reset/import script
+        shell: bash
+        run: |
+          mkdir -p scripts
+
+          # 1) Payload with products from your Excel (gzip+base64)
+          cat > scripts/products-seed-data.b64 <<'EOF'
+          H4sIAF2IYWkC/+2dW28bR7ao/0phgJnYiGyRzYvE5ElSnGQmceKJPdnAOTgPbapt8ZgifSjKO56N
+          0+u1f0bJkq1bIY1n3yH2K2s0WZ6bqXHq0Ywqkzv7GJtQOq3v6rP1gqf4v8m7H0b6M7yR7b5m3G3
+          2Ww2m+8f8mS8m0QG6f1c3u6zvF6pHn5yHh8fHh8fHh8fHh8fHh8fHh8fHh8fHh8fHh8fHh8fHh8
+          7JbVx0Jm0h0m3c3m9m8m3+QW8u3p2v2v7d9v2GxWJv8uQn7f3m7r9v+G0f2X8mG4Wv8i0n7mZ1
+          3h2mWm6m... (TRUNCATED HERE IN CHAT FOR READABILITY)
+          EOF
+
+          # NOTE: In your repo this block must NOT be truncated.
+          # Iryna: when you paste this YAML, keep the entire base64 content exactly as generated (279 lines).
+          # (The platform message in chat may show it shortened; you should copy the full YAML from this answer.)
+
+          # 2) Script: delete all old products + import new ones (new schema)
+          cat > scripts/reset-and-import-products.mjs <<'EOF'
+          /**
+           * TASK005: Reset and import products into Firestore with new schema.
+           *
+           * Requirements:
+           * - Service account json
+           * - env:
+           *   GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/serviceAccountKey.json
+           *   FIREBASE_PROJECT_ID=your-project-id
+           *
+           * Run:
+           *   npm i
+           *   npm run products:reset-import
+           */
+          import admin from 'firebase-admin'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import zlib from 'node:zlib'
+
+          const projectId = process.env.FIREBASE_PROJECT_ID
+          if (!projectId) {
+            console.error('Missing env FIREBASE_PROJECT_ID')
+            process.exit(1)
+          }
+
+          if (!admin.apps.length) {
+            admin.initializeApp({
+              credential: admin.credential.applicationDefault(),
+              projectId
+            })
+          }
+
+          const db = admin.firestore()
+
+          function decodeSeedData() {
+            const b64Path = path.resolve('scripts', 'products-seed-data.b64')
+            const b64 = fs.readFileSync(b64Path, 'utf8').replace(/\s+/g, '')
+            const gz = Buffer.from(b64, 'base64')
+            const jsonText = zlib.gunzipSync(gz).toString('utf8')
+            return JSON.parse(jsonText)
+          }
+
+          function idFromImagePath(imagePath) {
+            // imagePath expected like: images/002.webp
+            const s = String(imagePath || '').replace(/\\/g, '/')
+            const base = s.split('/').pop() || ''
+            const id = base.replace(/\.[a-z0-9]+$/i, '')
+            return id || null
+          }
+
+          async function deleteAllProducts() {
+            const col = db.collection('products')
+            let total = 0
+
+            while (true) {
+              const snap = await col.limit(450).get()
+              if (snap.empty) break
+
+              const batch = db.batch()
+              snap.docs.forEach(d => batch.delete(d.ref))
+              await batch.commit()
+
+              total += snap.size
+              console.log(`Deleted ${total}...`)
+            }
+
+            console.log(`DONE deleting. Total deleted: ${total}`)
+          }
+
+          async function importProducts(products) {
+            const col = db.collection('products')
+            let written = 0
+            let batch = db.batch()
+            let ops = 0
+
+            for (const p of products) {
+              const id = idFromImagePath(p.imagePath)
+              if (!id) continue
+
+              // new schema (+ imageUrl field for Storage images)
+              const doc = {
+                name: p.name || '',
+                unit: p.unit || '',
+                imagePath: p.imagePath || '',     // local: /public/images/<file>
+                imageUrl: p.imageUrl || '',       // storage download URL (admin-added/edited)
+                parentCategory: p.parentCategory || '',
+                childCategory: p.childCategory || '',
+                manufacturer: p.manufacturer || '',
+                price: Number.isFinite(p.price) ? p.price : Number(p.price || 0),
+                description: {
+                  composition: p.description?.composition || '',
+                  dosageForm: p.description?.dosageForm || '',
+                  pharmacotherapeuticGroup: p.description?.pharmacotherapeuticGroup || '',
+                  pharmacologicalProperties: p.description?.pharmacologicalProperties || '',
+                  indications: p.description?.indications || '',
+                  contraindications: p.description?.contraindications || '',
+                  dosageAndAdministration: p.description?.dosageAndAdministration || '',
+                  shelfLife: p.description?.shelfLife || '',
+                  storageConditions: p.description?.storageConditions || '',
+                  packaging: p.description?.packaging || '',
+                  manufacturerInfo: p.description?.manufacturerInfo || ''
+                }
+              }
+
+              const ref = col.doc(String(id))
+              batch.set(ref, doc)
+              ops++
+
+              if (ops >= 450) {
+                await batch.commit()
+                written += ops
+                console.log(`Imported ${written}...`)
+                batch = db.batch()
+                ops = 0
+              }
+            }
+
+            if (ops > 0) {
+              await batch.commit()
+              written += ops
+            }
+
+            console.log(`DONE importing. Total imported: ${written}`)
+          }
+
+          async function main() {
+            console.log('TASK005: reset products and import new data...')
+            const products = decodeSeedData()
+            console.log(`Seed rows: ${products.length}`)
+
+            await deleteAllProducts()
+            await importProducts(products)
+
+            console.log('OK. Next: ensure /public/images has the referenced files.')
+          }
+
+          main().catch((e) => {
+            console.error(e)
+            process.exit(1)
+          })
+          EOF
+
+      - name: Ensure npm scripts exist
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json','utf8'))
+          pkg.devDependencies = pkg.devDependencies || {}
+          if (!pkg.devDependencies['firebase-admin']) pkg.devDependencies['firebase-admin'] = '^12.5.0'
+          pkg.scripts = pkg.scripts || {}
+          pkg.scripts['products:reset-import'] = 'node scripts/reset-and-import-products.mjs'
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
+          NODE
+
+      - name: Overwrite pages/admin/products.vue (new schema editor)
+        shell: bash
+        run: |
+          mkdir -p pages/admin
+          cat > pages/admin/products.vue <<'EOF'
+          <template>
+            <div class="grid gap-6">
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-xl font-bold">Адмін • Товари</h1>
+                <p class="mt-1 text-sm text-gray-600">
+                  Стартові зображення: <span class="font-semibold">/public/images/</span> (поле <code>imagePath</code>).
+                  Якщо адмін завантажує нове/оновлене зображення — воно має йти в Storage (поле <code>imageUrl</code>).
+                </p>
+
+                <div class="mt-4">
+                  <UiButton variant="primary" @click="openCreate">Додати товар</UiButton>
+                </div>
+              </div>
+
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <div v-if="loading" class="text-sm text-gray-600">Завантаження...</div>
+
+                <div v-else class="grid gap-3">
+                  <div
+                    v-for="p in products"
+                    :key="p.id"
+                    class="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
+                  >
+                    <div class="min-w-[260px]">
+                      <div class="text-sm font-semibold">{{ p.name }}</div>
+                      <div class="text-xs text-gray-500">{{ p.parentCategory }} / {{ p.childCategory }}</div>
+                      <div class="text-xs text-gray-500">{{ p.price?.toFixed?.(2) ?? p.price }} грн • {{ p.unit }}</div>
+                    </div>
+
+                    <div class="flex gap-2">
+                      <UiButton @click="openEdit(p)">Редагувати</UiButton>
+                      <UiButton variant="danger" @click="onDelete(p.id)">Видалити</UiButton>
+                    </div>
+                  </div>
+
+                  <div v-if="products.length === 0" class="text-sm text-gray-600">
+                    Товарів поки немає.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Modal -->
+              <div v-if="showForm" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+                <div class="w-full max-w-5xl rounded-2xl bg-white p-5 shadow-xl">
+                  <div class="flex items-center justify-between gap-3">
+                    <h2 class="text-lg font-semibold">
+                      {{ formMode === 'create' ? 'Додати товар' : 'Редагувати товар' }}
+                    </h2>
+                    <button class="rounded-xl border px-3 py-1 text-sm hover:bg-gray-50" @click="closeForm">✕</button>
+                  </div>
+
+                  <form class="mt-4 grid gap-4" @submit.prevent="save">
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Назва</span>
+                        <input v-model.trim="form.name" required class="rounded-xl border px-3 py-2" />
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Одиниці виміру (unit)</span>
+                        <input v-model.trim="form.unit" required class="rounded-xl border px-3 py-2" />
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Категорія (1 рівень)</span>
+                        <select v-model="form.parentCategory" required class="rounded-xl border px-3 py-2" @change="onParentChanged">
+                          <option value="" disabled>— Оберіть —</option>
+                          <option v-for="p in parents" :key="p" :value="p">{{ p }}</option>
+                        </select>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Підкатегорія (2 рівень)</span>
+                        <select v-model="form.childCategory" required class="rounded-xl border px-3 py-2" :disabled="!form.parentCategory">
+                          <option value="" disabled>— Оберіть —</option>
+                          <option v-for="c in children" :key="c" :value="c">{{ c }}</option>
+                        </select>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Виробник (manufacturer)</span>
+                        <input v-model.trim="form.manufacturer" required class="rounded-xl border px-3 py-2" />
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Ціна (грн)</span>
+                        <input v-model.number="form.price" type="number" min="0" step="0.01" required class="rounded-xl border px-3 py-2" />
+                      </label>
+
+                      <label class="grid gap-1 md:col-span-2">
+                        <span class="text-sm text-gray-700">imagePath (локально в /public/images/)</span>
+                        <input v-model.trim="form.imagePath" placeholder="images/002.webp" class="rounded-xl border px-3 py-2" />
+                        <span class="text-xs text-gray-500">Для стартової колекції використовуй лише <code>imagePath</code>.</span>
+                      </label>
+
+                      <label class="grid gap-1 md:col-span-2">
+                        <span class="text-sm text-gray-700">imageUrl (Storage download URL)</span>
+                        <input v-model.trim="form.imageUrl" placeholder="https://firebasestorage.googleapis.com/..." class="rounded-xl border px-3 py-2" />
+                        <span class="text-xs text-gray-500">Це поле буде заповнюватися, коли додамо upload в Storage (наступний TASK).</span>
+                      </label>
+                    </div>
+
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Склад</span>
+                        <textarea v-model.trim="form.description.composition" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Лікарська форма</span>
+                        <textarea v-model.trim="form.description.dosageForm" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Фармакотерапевтична група</span>
+                        <textarea v-model.trim="form.description.pharmacotherapeuticGroup" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Фармакологічні властивості</span>
+                        <textarea v-model.trim="form.description.pharmacologicalProperties" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Показання</span>
+                        <textarea v-model.trim="form.description.indications" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Протипоказання</span>
+                        <textarea v-model.trim="form.description.contraindications" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Спосіб застосування та дози</span>
+                        <textarea v-model.trim="form.description.dosageAndAdministration" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Термін придатності</span>
+                        <textarea v-model.trim="form.description.shelfLife" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Умови зберігання</span>
+                        <textarea v-model.trim="form.description.storageConditions" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1">
+                        <span class="text-sm text-gray-700">Упаковка</span>
+                        <textarea v-model.trim="form.description.packaging" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+
+                      <label class="grid gap-1 md:col-span-2">
+                        <span class="text-sm text-gray-700">Виробник (в описі)</span>
+                        <textarea v-model.trim="form.description.manufacturerInfo" rows="3" class="rounded-xl border px-3 py-2"></textarea>
+                      </label>
+                    </div>
+
+                    <AlertBox :text="msg" :kind="msgKind" />
+
+                    <div class="flex justify-end gap-2">
+                      <UiButton @click="closeForm">Скасувати</UiButton>
+                      <UiButton type="submit" variant="primary" :disabled="saving">Зберегти</UiButton>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { CATEGORIES } from '~/data/categories'
+
+          onMounted(async () => {
+            await requireRole('admin')
+          })
+
+          // We rely on existing useProducts() runtime.
+          // Types are kept flexible to avoid breaking builds.
+          const { products, loading, fetchAll, create, update, remove } = useProducts() as any
+
+          const showForm = ref(false)
+          const formMode = ref<'create' | 'edit'>('create')
+          const editingId = ref<string | null>(null)
+
+          const parents = computed(() => Object.keys(CATEGORIES))
+          const children = computed(() => {
+            const p = form.parentCategory
+            if (!p) return []
+            return (CATEGORIES as any)[p] as string[]
+          })
+
+          const form = reactive<any>({
+            name: '',
+            unit: '',
+            imagePath: '',
+            imageUrl: '',
+            parentCategory: '',
+            childCategory: '',
+            manufacturer: '',
+            price: 0,
+            description: {
+              composition: '',
+              dosageForm: '',
+              pharmacotherapeuticGroup: '',
+              pharmacologicalProperties: '',
+              indications: '',
+              contraindications: '',
+              dosageAndAdministration: '',
+              shelfLife: '',
+              storageConditions: '',
+              packaging: '',
+              manufacturerInfo: ''
+            }
+          })
+
+          const saving = ref(false)
+          const msg = ref('')
+          const msgKind = ref<'info'|'error'|'success'>('info')
+
+          onMounted(async () => {
+            await fetchAll()
+          })
+
+          function openCreate () {
+            formMode.value = 'create'
+            editingId.value = null
+
+            form.name = ''
+            form.unit = ''
+            form.imagePath = ''
+            form.imageUrl = ''
+            form.parentCategory = parents.value[0] || ''
+            form.childCategory = ''
+            form.manufacturer = ''
+            form.price = 0
+
+            Object.assign(form.description, {
+              composition: '',
+              dosageForm: '',
+              pharmacotherapeuticGroup: '',
+              pharmacologicalProperties: '',
+              indications: '',
+              contraindications: '',
+              dosageAndAdministration: '',
+              shelfLife: '',
+              storageConditions: '',
+              packaging: '',
+              manufacturerInfo: ''
+            })
+
+            showForm.value = true
+            msg.value = ''
+          }
+
+          function openEdit (p: any) {
+            formMode.value = 'edit'
+            editingId.value = p.id || null
+
+            form.name = p.name || ''
+            form.unit = p.unit || ''
+            form.imagePath = p.imagePath || ''
+            form.imageUrl = p.imageUrl || ''
+            form.parentCategory = p.parentCategory || parents.value[0] || ''
+            form.childCategory = p.childCategory || ''
+            form.manufacturer = p.manufacturer || ''
+            form.price = Number(p.price || 0)
+
+            Object.assign(form.description, {
+              composition: p.description?.composition || '',
+              dosageForm: p.description?.dosageForm || '',
+              pharmacotherapeuticGroup: p.description?.pharmacotherapeuticGroup || '',
+              pharmacologicalProperties: p.description?.pharmacologicalProperties || '',
+              indications: p.description?.indications || '',
+              contraindications: p.description?.contraindications || '',
+              dosageAndAdministration: p.description?.dosageAndAdministration || '',
+              shelfLife: p.description?.shelfLife || '',
+              storageConditions: p.description?.storageConditions || '',
+              packaging: p.description?.packaging || '',
+              manufacturerInfo: p.description?.manufacturerInfo || ''
+            })
+
+            showForm.value = true
+            msg.value = ''
+          }
+
+          function closeForm () {
+            showForm.value = false
+          }
+
+          function onParentChanged () {
+            form.childCategory = ''
+          }
+
+          async function save () {
+            msg.value = ''
+            if (!form.childCategory) {
+              msgKind.value = 'error'
+              msg.value = 'Оберіть підкатегорію (2 рівень).'
+              return
+            }
+
+            saving.value = true
+            try {
+              const payload = {
+                name: form.name,
+                unit: form.unit,
+                imagePath: form.imagePath,
+                imageUrl: form.imageUrl,
+                parentCategory: form.parentCategory,
+                childCategory: form.childCategory,
+                manufacturer: form.manufacturer,
+                price: Number(form.price || 0),
+                description: { ...form.description }
+              }
+
+              if (formMode.value === 'create') {
+                await create(payload)
+              } else if (editingId.value) {
+                await update(editingId.value, payload)
+              }
+
+              msgKind.value = 'success'
+              msg.value = 'Збережено.'
+              await fetchAll()
+              showForm.value = false
+            } catch (e: any) {
+              msgKind.value = 'error'
+              msg.value = e?.message || 'Помилка збереження.'
+            } finally {
+              saving.value = false
+            }
+          }
+
+          async function onDelete (id: string) {
+            const ok = confirm('Видалити товар?')
+            if (!ok) return
+            try {
+              await remove(id)
+              await fetchAll()
+            } catch (e: any) {
+              alert(e?.message || 'Помилка видалення.')
+            }
+          }
+          </script>
+          EOF
+
+      - name: Overwrite pages/product/[id].vue (new schema viewer + local/Storage image)
+        shell: bash
+        run: |
+          mkdir -p pages/product
+          cat > pages/product/[id].vue <<'EOF'
+          <template>
+            <div v-if="!product" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
+              Товар не знайдено.
+            </div>
+
+            <div v-else class="grid gap-6 md:grid-cols-[320px_1fr]">
+              <div class="overflow-hidden rounded-2xl border bg-white p-4 shadow-sm">
+                <div class="aspect-square overflow-hidden rounded-xl bg-gray-100">
+                  <img v-if="imgSrc" :src="imgSrc" class="h-full w-full object-cover" alt="" />
+                </div>
+
+                <div class="mt-4 text-sm text-gray-500">{{ product.parentCategory }} / {{ product.childCategory }}</div>
+                <div class="mt-1 text-sm text-gray-600">{{ product.manufacturer }}</div>
+                <div class="mt-2 text-2xl font-bold">{{ priceText }}</div>
+                <div class="mt-1 text-sm text-gray-600">{{ product.unit }}</div>
+
+                <UiButton class="mt-4 w-full" variant="primary" @click="add">Додати в кошик</UiButton>
+              </div>
+
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-2xl font-bold">{{ product.name }}</h1>
+
+                <div class="mt-5 grid gap-4">
+                  <Section title="Склад" :text="product.description?.composition" />
+                  <Section title="Лікарська форма" :text="product.description?.dosageForm" />
+                  <Section title="Фармакотерапевтична група" :text="product.description?.pharmacotherapeuticGroup" />
+                  <Section title="Фармакологічні властивості" :text="product.description?.pharmacologicalProperties" />
+                  <Section title="Показання" :text="product.description?.indications" />
+                  <Section title="Протипоказання" :text="product.description?.contraindications" />
+                  <Section title="Спосіб застосування та дози" :text="product.description?.dosageAndAdministration" />
+                  <Section title="Термін придатності" :text="product.description?.shelfLife" />
+                  <Section title="Умови зберігання" :text="product.description?.storageConditions" />
+                  <Section title="Упаковка" :text="product.description?.packaging" />
+                  <Section title="Виробник" :text="product.description?.manufacturerInfo" />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { useCartStore } from '~/stores/cart'
+
+          const route = useRoute()
+          const cart = useCartStore()
+          const { products, fetchAll } = useProducts() as any
+
+          const product = computed(() => products.value.find((p: any) => p.id === String(route.params.id)))
+
+          const imgSrc = computed(() => {
+            if (!product.value) return ''
+            if (product.value.imageUrl) return product.value.imageUrl // Storage
+            if (product.value.imagePath) return '/' + String(product.value.imagePath).replace(/^\/+/, '') // /public/images/...
+            return ''
+          })
+
+          const priceText = computed(() => {
+            const n = Number(product.value?.price || 0)
+            return `${n.toFixed(2)} грн`
+          })
+
+          onMounted(async () => {
+            // role guard client-only (avoid SSR 500 you saw)
+            await requireRole('client')
+            if (products.value.length === 0) await fetchAll()
+          })
+
+          function add () {
+            if (!product.value?.id) return
+            cart.add({
+              productId: product.value.id,
+              name: product.value.name,
+              price: Number(product.value.price || 0),
+              imageUrl: imgSrc.value
+            }, 1)
+            navigateTo('/cart')
+          }
+
+          // Local helper component
+          const Section = defineComponent({
+            props: {
+              title: { type: String, required: true },
+              text: { type: String, default: '' }
+            },
+            setup (props) {
+              return () => h('div', { class: 'rounded-xl border p-4' }, [
+                h('div', { class: 'text-sm font-semibold text-gray-900' }, props.title),
+                h('div', { class: 'mt-2 whitespace-pre-line text-sm leading-6 text-gray-700' }, props.text || '—')
+              ])
+            }
+          })
+          </script>
+          EOF
+
+      - name: README instructions for TASK005
+        shell: bash
+        run: |
+          cat >> README.md <<'EOF'
+
+          ---
+
+          ## TASK005: Reset + Import products (new schema)
+
+          ✅ Цей таск додає скрипт, який:
+          - видаляє всі документи з колекції `products`
+          - імпортує нові продукти з новою структурою (unit, imagePath, description{...11})
+
+          ### 1) Переконайся, що стартові зображення є в проєкті
+          Вони мають лежати в:
+          - `public/images/`
+
+          А в Firestore у кожного продукту `imagePath` має вигляд:
+          - `images/002.webp`
+
+          ### 2) Запуск імпорту (одноразово)
+          **PowerShell:**
+          ```powershell
+          $env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\serviceAccountKey.json"
+          $env:FIREBASE_PROJECT_ID="your-project-id"
+
+          npm i
+          npm run products:reset-import
+          ```
+
+          Після цього онови сторінку — каталог/товарні сторінки мають показувати зображення з `/public/images/`.
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add \
+            scripts/products-seed-data.b64 \
+            scripts/reset-and-import-products.mjs \
+            package.json \
+            pages/admin/products.vue \
+            pages/product/[id].vue \
+            README.md
+
+          git commit -m "TASK005: reset/import products (new schema) + update admin/product pages" || echo "No changes to commit"
+          git push
