@@ -255,3 +255,30 @@ npm run export:image-links
 ```
 
 Результат: файл `product_images.csv` (productId → image_direct_url → commons_file_page → license).
+
+---
+
+## TASK005: Reset + Import products (new schema)
+
+✅ Цей таск додає скрипт, який:
+- видаляє всі документи з колекції `products`
+- імпортує нові продукти з новою структурою (unit, imagePath, description{...11})
+
+### 1) Переконайся, що стартові зображення є в проєкті
+Вони мають лежати в:
+- `public/images/`
+
+А в Firestore у кожного продукту `imagePath` має вигляд:
+- `images/002.webp`
+
+### 2) Запуск імпорту (одноразово)
+**PowerShell:**
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\serviceAccountKey.json"
+$env:FIREBASE_PROJECT_ID="your-project-id"
+
+npm i
+npm run products:reset-import
+```
+
+Після цього онови сторінку — каталог/товарні сторінки мають показувати зображення з `/public/images/`.

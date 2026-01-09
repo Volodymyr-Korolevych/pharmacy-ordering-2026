@@ -11,7 +11,8 @@
     "seed:pharmacies": "node scripts/seed-pharmacies.mjs",
     "seed:products": "node scripts/seed-products.mjs",
     "gen:images": "node scripts/generate-local-product-images.mjs",
-    "export:image-links": "node scripts/export-products-image-links.mjs"
+    "export:image-links": "node scripts/export-products-image-links.mjs",
+    "products:reset-import": "node scripts/reset-and-import-products.mjs"
   },
   "dependencies": {
     "nuxt": "^3.12.4",
