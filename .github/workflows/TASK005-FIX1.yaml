@@ -1,0 +1,341 @@
+name: TASK005-FIX1 - Import products from Excel (no base64) + fix local image path handling
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task005_fix1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Overwrite scripts/reset-and-import-products.mjs (read xlsx)
+        shell: bash
+        run: |
+          mkdir -p scripts
+
+          cat > scripts/reset-and-import-products.mjs <<'EOF'
+          /**
+           * TASK005: Reset products and import from Excel with new schema.
+           *
+           * IMPORTANT:
+           * - Place the Excel file at: scripts/medicinelist_new.xlsx
+           *
+           * ENV:
+           *   GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/serviceAccountKey.json
+           *   FIREBASE_PROJECT_ID=your-project-id
+           *
+           * Run:
+           *   npm i
+           *   npm run products:reset-import
+           */
+
+          import admin from 'firebase-admin'
+          import path from 'node:path'
+          import fs from 'node:fs'
+          import xlsx from 'xlsx'
+
+          const projectId = process.env.FIREBASE_PROJECT_ID
+          if (!projectId) {
+            console.error('Missing env FIREBASE_PROJECT_ID')
+            process.exit(1)
+          }
+
+          if (!admin.apps.length) {
+            admin.initializeApp({
+              credential: admin.credential.applicationDefault(),
+              projectId
+            })
+          }
+
+          const db = admin.firestore()
+
+          function normalizeImagePath(imagePath) {
+            // Excel може містити "002.webp" або "images/002.webp"
+            const s = String(imagePath || '').trim().replace(/\\/g, '/')
+            if (!s) return ''
+            if (s.includes('/')) return s.startsWith('images/') ? s : s.replace(/^\/+/, '')
+            return `images/${s}`
+          }
+
+          function docIdFromImagePath(imagePath) {
+            const s = normalizeImagePath(imagePath)
+            const base = s.split('/').pop() || ''
+            const id = base.replace(/\.[a-z0-9]+$/i, '')
+            return id || null
+          }
+
+          function readExcelRows() {
+            const filePath = path.resolve('scripts', 'medicinelist_new.xlsx')
+            if (!fs.existsSync(filePath)) {
+              console.error(`Excel file not found: ${filePath}`)
+              console.error('Put your file here: scripts/medicinelist_new.xlsx')
+              process.exit(1)
+            }
+
+            const wb = xlsx.readFile(filePath, { cellDates: false })
+            const sheetName = wb.SheetNames[0]
+            const ws = wb.Sheets[sheetName]
+
+            // defval щоб порожні були '' а не undefined
+            const rows = xlsx.utils.sheet_to_json(ws, { defval: '' })
+            return rows
+          }
+
+          async function deleteAllProducts() {
+            const col = db.collection('products')
+            let total = 0
+            while (true) {
+              const snap = await col.limit(450).get()
+              if (snap.empty) break
+
+              const batch = db.batch()
+              snap.docs.forEach(d => batch.delete(d.ref))
+              await batch.commit()
+
+              total += snap.size
+              console.log(`Deleted ${total}...`)
+            }
+            console.log(`DONE deleting. Total deleted: ${total}`)
+          }
+
+          async function importProducts(rows) {
+            const col = db.collection('products')
+            let written = 0
+            let batch = db.batch()
+            let ops = 0
+
+            for (const r of rows) {
+              const id = docIdFromImagePath(r.imagePath)
+              if (!id) continue
+
+              const imagePath = normalizeImagePath(r.imagePath)
+
+              // NEW SCHEMA
+              const doc = {
+                name: String(r.name || ''),
+                unit: String(r.unit || ''),
+                imagePath,                 // local starter image: /public/images/<file>
+                imageUrl: String(r.imageUrl || ''), // admin Storage URL (empty for стартових)
+                parentCategory: String(r.parentCategory || ''),
+                childCategory: String(r.childCategory || ''),
+                manufacturer: String(r.manufacturer || ''),
+                price: Number(r.price || 0),
+                description: {
+                  composition: String(r['Склад'] || ''),
+                  dosageForm: String(r['Лікарська форма'] || ''),
+                  pharmacotherapeuticGroup: String(r['Фармакотерапевтична група'] || ''),
+                  pharmacologicalProperties: String(r['Фармакологічні властивості'] || ''),
+                  indications: String(r['Показання'] || ''),
+                  contraindications: String(r['Протипоказання'] || ''),
+                  dosageAndAdministration: String(r['Спосіб застосування та дози'] || ''),
+                  shelfLife: String(r['Термін придатності'] || ''),
+                  storageConditions: String(r['Умови зберігання'] || ''),
+                  packaging: String(r['Упаковка'] || ''),
+                  manufacturerInfo: String(r['Виробник'] || '')
+                }
+              }
+
+              const ref = col.doc(String(id))
+              batch.set(ref, doc)
+              ops++
+
+              if (ops >= 450) {
+                await batch.commit()
+                written += ops
+                console.log(`Imported ${written}...`)
+                batch = db.batch()
+                ops = 0
+              }
+            }
+
+            if (ops > 0) {
+              await batch.commit()
+              written += ops
+            }
+
+            console.log(`DONE importing. Total imported: ${written}`)
+          }
+
+          async function main() {
+            console.log('TASK005: reset products and import from Excel...')
+            const rows = readExcelRows()
+            console.log(`Excel rows: ${rows.length}`)
+
+            await deleteAllProducts()
+            await importProducts(rows)
+
+            console.log('OK. Ensure starter images exist in /public/images/.')
+          }
+
+          main().catch((e) => {
+            console.error(e)
+            process.exit(1)
+          })
+          EOF
+
+      - name: Ensure dependencies and npm scripts
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs')
+          const pkg = JSON.parse(fs.readFileSync('package.json','utf8'))
+
+          pkg.devDependencies = pkg.devDependencies || {}
+          if (!pkg.devDependencies['firebase-admin']) pkg.devDependencies['firebase-admin'] = '^12.5.0'
+          if (!pkg.devDependencies['xlsx']) pkg.devDependencies['xlsx'] = '^0.18.5'
+
+          pkg.scripts = pkg.scripts || {}
+          pkg.scripts['products:reset-import'] = 'node scripts/reset-and-import-products.mjs'
+
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n')
+          NODE
+
+      - name: Overwrite pages/product/[id].vue (fix local image path prefix)
+        shell: bash
+        run: |
+          mkdir -p pages/product
+          cat > pages/product/[id].vue <<'EOF'
+          <template>
+            <div v-if="!product" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
+              Товар не знайдено.
+            </div>
+
+            <div v-else class="grid gap-6 md:grid-cols-[320px_1fr]">
+              <div class="overflow-hidden rounded-2xl border bg-white p-4 shadow-sm">
+                <div class="aspect-square overflow-hidden rounded-xl bg-gray-100">
+                  <img v-if="imgSrc" :src="imgSrc" class="h-full w-full object-cover" alt="" />
+                </div>
+
+                <div class="mt-4 text-sm text-gray-500">{{ product.parentCategory }} / {{ product.childCategory }}</div>
+                <div class="mt-1 text-sm text-gray-600">{{ product.manufacturer }}</div>
+                <div class="mt-2 text-2xl font-bold">{{ priceText }}</div>
+                <div class="mt-1 text-sm text-gray-600">{{ product.unit }}</div>
+
+                <UiButton class="mt-4 w-full" variant="primary" @click="add">Додати в кошик</UiButton>
+              </div>
+
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <h1 class="text-2xl font-bold">{{ product.name }}</h1>
+
+                <div class="mt-5 grid gap-4">
+                  <Section title="Склад" :text="product.description?.composition" />
+                  <Section title="Лікарська форма" :text="product.description?.dosageForm" />
+                  <Section title="Фармакотерапевтична група" :text="product.description?.pharmacotherapeuticGroup" />
+                  <Section title="Фармакологічні властивості" :text="product.description?.pharmacologicalProperties" />
+                  <Section title="Показання" :text="product.description?.indications" />
+                  <Section title="Протипоказання" :text="product.description?.contraindications" />
+                  <Section title="Спосіб застосування та дози" :text="product.description?.dosageAndAdministration" />
+                  <Section title="Термін придатності" :text="product.description?.shelfLife" />
+                  <Section title="Умови зберігання" :text="product.description?.storageConditions" />
+                  <Section title="Упаковка" :text="product.description?.packaging" />
+                  <Section title="Виробник" :text="product.description?.manufacturerInfo" />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { useCartStore } from '~/stores/cart'
+
+          const route = useRoute()
+          const cart = useCartStore()
+          const { products, fetchAll } = useProducts() as any
+
+          const product = computed(() => products.value.find((p: any) => p.id === String(route.params.id)))
+
+          function normalizeLocalImagePath(p: any) {
+            const raw = String(p?.imagePath || '').trim().replace(/\\/g, '/')
+            if (!raw) return ''
+            const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
+            return '/' + rel
+          }
+
+          const imgSrc = computed(() => {
+            if (!product.value) return ''
+            if (product.value.imageUrl) return product.value.imageUrl // Storage
+            return normalizeLocalImagePath(product.value)            // /public/images/...
+          })
+
+          const priceText = computed(() => {
+            const n = Number(product.value?.price || 0)
+            return `${n.toFixed(2)} грн`
+          })
+
+          onMounted(async () => {
+            await requireRole('client') // client-only
+            if (products.value.length === 0) await fetchAll()
+          })
+
+          function add () {
+            if (!product.value?.id) return
+            cart.add({
+              productId: product.value.id,
+              name: product.value.name,
+              price: Number(product.value.price || 0),
+              imageUrl: imgSrc.value
+            }, 1)
+            navigateTo('/cart')
+          }
+
+          const Section = defineComponent({
+            props: { title: { type: String, required: true }, text: { type: String, default: '' } },
+            setup (props) {
+              return () => h('div', { class: 'rounded-xl border p-4' }, [
+                h('div', { class: 'text-sm font-semibold text-gray-900' }, props.title),
+                h('div', { class: 'mt-2 whitespace-pre-line text-sm leading-6 text-gray-700' }, props.text || '—')
+              ])
+            }
+          })
+          </script>
+          EOF
+
+      - name: Update README instructions
+        shell: bash
+        run: |
+          grep -q "TASK005-FIX1" README.md || cat >> README.md <<'EOF'
+
+          ---
+
+          ## TASK005-FIX1: Імпорт products з Excel (без base64)
+
+          ### 1) Поклади файл Excel у репозиторій
+          Скопіюй твій Excel у:
+          - `scripts/medicinelist_new.xlsx`
+
+          > Файл НЕ повинен лежати в public.
+
+          ### 2) Переконайся, що зображення є локально
+          Стартові зображення мають лежати в:
+          - `public/images/`
+
+          В Excel поле `imagePath` може бути:
+          - `002.webp` (тоді автоматично стане `images/002.webp`)
+          - або `images/002.webp`
+
+          ### 3) Запуск імпорту (PowerShell)
+          ```powershell
+          $env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\serviceAccountKey.json"
+          $env:FIREBASE_PROJECT_ID="your-project-id"
+
+          npm i
+          npm run products:reset-import
+          ```
+
+          Результат:
+          - колекція `products` буде повністю перезаписана
+          - структура `description` стане об'єктом з 11 англ. полів
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add scripts/reset-and-import-products.mjs package.json pages/product/[id].vue README.md
+          git commit -m "TASK005-FIX1: import products from Excel (xlsx) + fix local imagePath prefix" || echo "No changes to commit"
+          git push
