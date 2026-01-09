@@ -282,3 +282,34 @@ npm run products:reset-import
 ```
 
 Після цього онови сторінку — каталог/товарні сторінки мають показувати зображення з `/public/images/`.
+
+---
+
+## TASK005-FIX1: Імпорт products з Excel (без base64)
+
+### 1) Поклади файл Excel у репозиторій
+Скопіюй твій Excel у:
+- `scripts/medicinelist_new.xlsx`
+
+> Файл НЕ повинен лежати в public.
+
+### 2) Переконайся, що зображення є локально
+Стартові зображення мають лежати в:
+- `public/images/`
+
+В Excel поле `imagePath` може бути:
+- `002.webp` (тоді автоматично стане `images/002.webp`)
+- або `images/002.webp`
+
+### 3) Запуск імпорту (PowerShell)
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS="C:\path\serviceAccountKey.json"
+$env:FIREBASE_PROJECT_ID="your-project-id"
+
+npm i
+npm run products:reset-import
+```
+
+Результат:
+- колекція `products` буде повністю перезаписана
+- структура `description` стане об'єктом з 11 англ. полів

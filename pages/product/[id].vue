@@ -46,11 +46,17 @@ const { products, fetchAll } = useProducts() as any
 
 const product = computed(() => products.value.find((p: any) => p.id === String(route.params.id)))
 
+function normalizeLocalImagePath(p: any) {
+  const raw = String(p?.imagePath || '').trim().replace(/\\/g, '/')
+  if (!raw) return ''
+  const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
+  return '/' + rel
+}
+
 const imgSrc = computed(() => {
   if (!product.value) return ''
   if (product.value.imageUrl) return product.value.imageUrl // Storage
-  if (product.value.imagePath) return '/' + String(product.value.imagePath).replace(/^\/+/, '') // /public/images/...
-  return ''
+  return normalizeLocalImagePath(product.value)            // /public/images/...
 })
 
 const priceText = computed(() => {
@@ -59,8 +65,7 @@ const priceText = computed(() => {
 })
 
 onMounted(async () => {
-  // role guard client-only (avoid SSR 500 you saw)
-  await requireRole('client')
+  await requireRole('client') // client-only
   if (products.value.length === 0) await fetchAll()
 })
 
@@ -75,12 +80,8 @@ function add () {
   navigateTo('/cart')
 }
 
-// Local helper component
 const Section = defineComponent({
-  props: {
-    title: { type: String, required: true },
-    text: { type: String, default: '' }
-  },
+  props: { title: { type: String, required: true }, text: { type: String, default: '' } },
   setup (props) {
     return () => h('div', { class: 'rounded-xl border p-4' }, [
       h('div', { class: 'text-sm font-semibold text-gray-900' }, props.title),
