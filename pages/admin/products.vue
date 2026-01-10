@@ -4,7 +4,7 @@
       <h1 class="text-xl font-bold">Адмін • Товари</h1>
       <p class="mt-1 text-sm text-gray-600">
         Стартові зображення: <span class="font-semibold">/public/images/</span> (поле <code>imagePath</code>).
-        Якщо адмін завантажує нове/оновлене зображення — воно має йти в Storage (поле <code>imageUrl</code>).
+        Якщо адмін завантажує файл — він піде в <span class="font-semibold">Storage</span>, а у товарі запишеться <code>imageUrl</code>.
       </p>
 
       <div class="mt-4">
@@ -21,10 +21,10 @@
           :key="p.id"
           class="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
         >
-          <div class="min-w-[260px]">
+          <div class="min-w-[280px]">
             <div class="text-sm font-semibold">{{ p.name }}</div>
             <div class="text-xs text-gray-500">{{ p.parentCategory }} / {{ p.childCategory }}</div>
-            <div class="text-xs text-gray-500">{{ p.price?.toFixed?.(2) ?? p.price }} грн • {{ p.unit }}</div>
+            <div class="text-xs text-gray-500">{{ formatPrice(p.price) }} • {{ p.unit }}</div>
           </div>
 
           <div class="flex gap-2">
@@ -39,131 +39,154 @@
       </div>
     </div>
 
-    <!-- Modal -->
-    <div v-if="showForm" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
-      <div class="w-full max-w-5xl rounded-2xl bg-white p-5 shadow-xl">
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="text-lg font-semibold">
-            {{ formMode === 'create' ? 'Додати товар' : 'Редагувати товар' }}
-          </h2>
+    <!-- MODAL -->
+    <div v-if="showForm" class="fixed inset-0 z-50 bg-black/40 p-3 md:p-6">
+      <div class="mx-auto flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between gap-3 border-b px-5 py-4">
+          <div class="min-w-0">
+            <h2 class="truncate text-lg font-semibold">
+              {{ formMode === 'create' ? 'Додати товар' : 'Редагувати товар' }}
+            </h2>
+            <div class="mt-0.5 text-xs text-gray-500">
+              Вкладки зручніші за скрол всієї сторінки. Скрол є тільки всередині модалки.
+            </div>
+          </div>
+
           <button class="rounded-xl border px-3 py-1 text-sm hover:bg-gray-50" @click="closeForm">✕</button>
         </div>
 
-        <form class="mt-4 grid gap-4" @submit.prevent="save">
-          <div class="grid gap-3 md:grid-cols-2">
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Назва</span>
-              <input v-model.trim="form.name" required class="rounded-xl border px-3 py-2" />
-            </label>
+        <!-- Tabs -->
+        <div class="flex gap-2 border-b px-5 py-3">
+          <button
+            class="rounded-xl px-3 py-2 text-sm"
+            :class="tab==='main' ? 'bg-gray-900 text-white' : 'border hover:bg-gray-50'"
+            @click="tab='main'"
+            type="button"
+          >
+            Основне
+          </button>
+          <button
+            class="rounded-xl px-3 py-2 text-sm"
+            :class="tab==='desc' ? 'bg-gray-900 text-white' : 'border hover:bg-gray-50'"
+            @click="tab='desc'"
+            type="button"
+          >
+            Опис
+          </button>
+        </div>
 
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Одиниці виміру (unit)</span>
-              <input v-model.trim="form.unit" required class="rounded-xl border px-3 py-2" />
-            </label>
+        <!-- Body (scroll area) -->
+        <form class="flex-1 overflow-y-auto px-5 py-4" @submit.prevent="save">
+          <!-- MAIN TAB -->
+          <div v-show="tab==='main'" class="grid gap-4">
+            <div class="grid gap-3 md:grid-cols-2">
+              <label class="grid gap-1">
+                <span class="text-sm text-gray-700">Назва</span>
+                <input v-model.trim="form.name" required class="rounded-xl border px-3 py-2" />
+              </label>
 
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Категорія (1 рівень)</span>
-              <select v-model="form.parentCategory" required class="rounded-xl border px-3 py-2" @change="onParentChanged">
-                <option value="" disabled>— Оберіть —</option>
-                <option v-for="p in parents" :key="p" :value="p">{{ p }}</option>
-              </select>
-            </label>
+              <label class="grid gap-1">
+                <span class="text-sm text-gray-700">Одиниці (unit)</span>
+                <input v-model.trim="form.unit" required class="rounded-xl border px-3 py-2" />
+              </label>
 
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Підкатегорія (2 рівень)</span>
-              <select v-model="form.childCategory" required class="rounded-xl border px-3 py-2" :disabled="!form.parentCategory">
-                <option value="" disabled>— Оберіть —</option>
-                <option v-for="c in children" :key="c" :value="c">{{ c }}</option>
-              </select>
-            </label>
+              <label class="grid gap-1">
+                <span class="text-sm text-gray-700">Категорія (1 рівень)</span>
+                <select v-model="form.parentCategory" required class="rounded-xl border px-3 py-2" @change="onParentChanged">
+                  <option value="" disabled>— Оберіть —</option>
+                  <option v-for="p in parents" :key="p" :value="p">{{ p }}</option>
+                </select>
+              </label>
 
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Виробник (manufacturer)</span>
-              <input v-model.trim="form.manufacturer" required class="rounded-xl border px-3 py-2" />
-            </label>
+              <label class="grid gap-1">
+                <span class="text-sm text-gray-700">Підкатегорія (2 рівень)</span>
+                <select v-model="form.childCategory" required class="rounded-xl border px-3 py-2" :disabled="!form.parentCategory">
+                  <option value="" disabled>— Оберіть —</option>
+                  <option v-for="c in children" :key="c" :value="c">{{ c }}</option>
+                </select>
+              </label>
 
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Ціна (грн)</span>
-              <input v-model.number="form.price" type="number" min="0" step="0.01" required class="rounded-xl border px-3 py-2" />
-            </label>
+              <label class="grid gap-1">
+                <span class="text-sm text-gray-700">Виробник (manufacturer)</span>
+                <input v-model.trim="form.manufacturer" required class="rounded-xl border px-3 py-2" />
+              </label>
 
-            <label class="grid gap-1 md:col-span-2">
-              <span class="text-sm text-gray-700">imagePath (локально в /public/images/)</span>
-              <input v-model.trim="form.imagePath" placeholder="images/002.webp" class="rounded-xl border px-3 py-2" />
-              <span class="text-xs text-gray-500">Для стартової колекції використовуй лише <code>imagePath</code>.</span>
-            </label>
+              <label class="grid gap-1">
+                <span class="text-sm text-gray-700">Ціна (грн)</span>
+                <input v-model.number="form.price" type="number" min="0" step="0.01" required class="rounded-xl border px-3 py-2" />
+              </label>
+            </div>
 
-            <label class="grid gap-1 md:col-span-2">
-              <span class="text-sm text-gray-700">imageUrl (Storage download URL)</span>
-              <input v-model.trim="form.imageUrl" placeholder="https://firebasestorage.googleapis.com/..." class="rounded-xl border px-3 py-2" />
-              <span class="text-xs text-gray-500">Це поле буде заповнюватися, коли додамо upload в Storage (наступний TASK).</span>
-            </label>
+            <div class="grid gap-3 md:grid-cols-2">
+              <div class="rounded-2xl border p-4">
+                <div class="text-sm font-semibold">Зображення</div>
+
+                <div class="mt-3 grid gap-2">
+                  <div class="text-xs text-gray-500">Поточне (Storage або local)</div>
+                  <div class="aspect-square overflow-hidden rounded-xl bg-gray-100">
+                    <img v-if="previewSrc" :src="previewSrc" class="h-full w-full object-cover" alt="" />
+                  </div>
+
+                  <div class="grid gap-1">
+                    <span class="text-sm text-gray-700">Стартове локальне imagePath</span>
+                    <input v-model.trim="form.imagePath" placeholder="images/002.webp" class="rounded-xl border px-3 py-2" />
+                    <span class="text-xs text-gray-500">
+                      Це для стартової колекції (в <code>/public/images</code>).
+                    </span>
+                  </div>
+
+                  <div class="grid gap-1">
+                    <span class="text-sm text-gray-700">Storage imageUrl (заповнюється після upload)</span>
+                    <input v-model.trim="form.imageUrl" placeholder="https://firebasestorage.googleapis.com/..." class="rounded-xl border px-3 py-2" />
+                  </div>
+
+                  <div class="grid gap-2 pt-2">
+                    <span class="text-sm text-gray-700">Завантажити нове зображення в Storage</span>
+                    <input type="file" accept="image/*" class="block w-full text-sm" @change="onFileChange" />
+                    <div class="text-xs text-gray-500">
+                      Після вибору файлу він завантажиться в Storage при натисканні <b>Зберегти</b>.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-2xl border p-4">
+                <div class="text-sm font-semibold">Підказка</div>
+                <div class="mt-2 text-sm text-gray-700 leading-6">
+                  Якщо завантажуєш файл — ми записуємо <code>imageUrl</code>.
+                  <br />
+                  Якщо файл не завантажуєш — картинка береться з <code>imagePath</code> (локально).
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-2">
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Склад</span>
-              <textarea v-model.trim="form.description.composition" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Лікарська форма</span>
-              <textarea v-model.trim="form.description.dosageForm" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Фармакотерапевтична група</span>
-              <textarea v-model.trim="form.description.pharmacotherapeuticGroup" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Фармакологічні властивості</span>
-              <textarea v-model.trim="form.description.pharmacologicalProperties" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Показання</span>
-              <textarea v-model.trim="form.description.indications" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Протипоказання</span>
-              <textarea v-model.trim="form.description.contraindications" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Спосіб застосування та дози</span>
-              <textarea v-model.trim="form.description.dosageAndAdministration" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Термін придатності</span>
-              <textarea v-model.trim="form.description.shelfLife" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Умови зберігання</span>
-              <textarea v-model.trim="form.description.storageConditions" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1">
-              <span class="text-sm text-gray-700">Упаковка</span>
-              <textarea v-model.trim="form.description.packaging" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
-
-            <label class="grid gap-1 md:col-span-2">
-              <span class="text-sm text-gray-700">Виробник (в описі)</span>
-              <textarea v-model.trim="form.description.manufacturerInfo" rows="3" class="rounded-xl border px-3 py-2"></textarea>
-            </label>
+          <!-- DESC TAB -->
+          <div v-show="tab==='desc'" class="grid gap-3 md:grid-cols-2">
+            <Field label="Склад" v-model="form.description.composition" />
+            <Field label="Лікарська форма" v-model="form.description.dosageForm" />
+            <Field label="Фармакотерапевтична група" v-model="form.description.pharmacotherapeuticGroup" />
+            <Field label="Фармакологічні властивості" v-model="form.description.pharmacologicalProperties" />
+            <Field label="Показання" v-model="form.description.indications" />
+            <Field label="Протипоказання" v-model="form.description.contraindications" />
+            <Field label="Спосіб застосування та дози" v-model="form.description.dosageAndAdministration" />
+            <Field label="Термін придатності" v-model="form.description.shelfLife" />
+            <Field label="Умови зберігання" v-model="form.description.storageConditions" />
+            <Field label="Упаковка" v-model="form.description.packaging" />
+            <Field label="Виробник" v-model="form.description.manufacturerInfo" class="md:col-span-2" />
           </div>
 
           <AlertBox :text="msg" :kind="msgKind" />
-
-          <div class="flex justify-end gap-2">
-            <UiButton @click="closeForm">Скасувати</UiButton>
-            <UiButton type="submit" variant="primary" :disabled="saving">Зберегти</UiButton>
-          </div>
         </form>
+
+        <!-- Footer -->
+        <div class="flex justify-end gap-2 border-t px-5 py-4">
+          <UiButton @click="closeForm">Скасувати</UiButton>
+          <UiButton type="button" variant="primary" :disabled="saving" @click="save">
+            {{ saving ? 'Збереження...' : 'Зберегти' }}
+          </UiButton>
+        </div>
       </div>
     </div>
   </div>
@@ -176,8 +199,6 @@ onMounted(async () => {
   await requireRole('admin')
 })
 
-// We rely on existing useProducts() runtime.
-// Types are kept flexible to avoid breaking builds.
 const { products, loading, fetchAll, create, update, remove } = useProducts() as any
 
 const showForm = ref(false)
@@ -190,6 +211,10 @@ const children = computed(() => {
   if (!p) return []
   return (CATEGORIES as any)[p] as string[]
 })
+
+const tab = ref<'main'|'desc'>('main')
+
+const fileToUpload = ref<File | null>(null)
 
 const form = reactive<any>({
   name: '',
@@ -223,9 +248,29 @@ onMounted(async () => {
   await fetchAll()
 })
 
+function formatPrice(v: any) {
+  const n = Number(v || 0)
+  return `${n.toFixed(2)} грн`
+}
+
+function normalizeLocalImagePath(imagePath: string) {
+  const raw = String(imagePath || '').trim().replace(/\\/g, '/')
+  if (!raw) return ''
+  const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
+  return '/' + rel
+}
+
+const previewSrc = computed(() => {
+  if (form.imageUrl) return form.imageUrl
+  if (form.imagePath) return normalizeLocalImagePath(form.imagePath)
+  return ''
+})
+
 function openCreate () {
   formMode.value = 'create'
   editingId.value = null
+  tab.value = 'main'
+  fileToUpload.value = null
 
   form.name = ''
   form.unit = ''
@@ -235,7 +280,6 @@ function openCreate () {
   form.childCategory = ''
   form.manufacturer = ''
   form.price = 0
-
   Object.assign(form.description, {
     composition: '',
     dosageForm: '',
@@ -257,6 +301,8 @@ function openCreate () {
 function openEdit (p: any) {
   formMode.value = 'edit'
   editingId.value = p.id || null
+  tab.value = 'main'
+  fileToUpload.value = null
 
   form.name = p.name || ''
   form.unit = p.unit || ''
@@ -287,10 +333,33 @@ function openEdit (p: any) {
 
 function closeForm () {
   showForm.value = false
+  fileToUpload.value = null
 }
 
 function onParentChanged () {
   form.childCategory = ''
+}
+
+function onFileChange (e: Event) {
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0] || null
+  fileToUpload.value = f
+}
+
+async function uploadImageIfNeeded(productId: string | null) {
+  if (!fileToUpload.value) return null
+
+  const fd = new FormData()
+  fd.append('file', fileToUpload.value)
+  if (productId) fd.append('productId', productId)
+
+  const res = await $fetch<any>('/api/admin/upload', {
+    method: 'POST',
+    body: fd
+  })
+
+  if (!res?.ok) throw new Error('Upload failed')
+  return { downloadURL: res.downloadURL as string, filePath: res.filePath as string }
 }
 
 async function save () {
@@ -298,12 +367,14 @@ async function save () {
   if (!form.childCategory) {
     msgKind.value = 'error'
     msg.value = 'Оберіть підкатегорію (2 рівень).'
+    tab.value = 'main'
     return
   }
 
   saving.value = true
   try {
-    const payload = {
+    // 1) build payload (without upload first)
+    const payload: any = {
       name: form.name,
       unit: form.unit,
       imagePath: form.imagePath,
@@ -315,9 +386,21 @@ async function save () {
       description: { ...form.description }
     }
 
+    // 2) If create: create first to get id, then upload and update imageUrl
     if (formMode.value === 'create') {
-      await create(payload)
+      const created = await create(payload) // expect it may return id; if not, we fallback by refetch
+      const newId = typeof created === 'string' ? created : (created?.id || null)
+
+      const up = await uploadImageIfNeeded(newId)
+      if (up?.downloadURL) {
+        payload.imageUrl = up.downloadURL
+        // after upload, imageUrl wins. imagePath can stay as is (starter) or be cleared; we keep it.
+        if (newId) await update(newId, payload)
+      }
     } else if (editingId.value) {
+      // edit: upload first (so we store imageUrl) then update
+      const up = await uploadImageIfNeeded(editingId.value)
+      if (up?.downloadURL) payload.imageUrl = up.downloadURL
       await update(editingId.value, payload)
     }
 
@@ -325,9 +408,10 @@ async function save () {
     msg.value = 'Збережено.'
     await fetchAll()
     showForm.value = false
+    fileToUpload.value = null
   } catch (e: any) {
     msgKind.value = 'error'
-    msg.value = e?.message || 'Помилка збереження.'
+    msg.value = e?.data?.message || e?.message || 'Помилка збереження.'
   } finally {
     saving.value = false
   }
@@ -343,4 +427,23 @@ async function onDelete (id: string) {
     alert(e?.message || 'Помилка видалення.')
   }
 }
+
+const Field = defineComponent({
+  props: {
+    label: { type: String, required: true },
+    modelValue: { type: String, default: '' }
+  },
+  emits: ['update:modelValue'],
+  setup(props, { emit, attrs }) {
+    return () => h('label', { class: ['grid gap-1', (attrs as any).class || ''] }, [
+      h('span', { class: 'text-sm text-gray-700' }, props.label),
+      h('textarea', {
+        class: 'rounded-xl border px-3 py-2',
+        rows: 3,
+        value: props.modelValue,
+        onInput: (e: any) => emit('update:modelValue', e.target.value)
+      })
+    ])
+  }
+})
 </script>
