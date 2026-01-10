@@ -313,3 +313,23 @@ npm run products:reset-import
 Результат:
 - колекція `products` буде повністю перезаписана
 - структура `description` стане об'єктом з 11 англ. полів
+
+---
+
+## TASK006: Upload images to Firebase Storage from Admin (server API)
+
+Адмін входить фіксованим логіном/паролем (без Firebase Auth), тому завантаження у Storage робимо через серверний API
+з `firebase-admin`.
+
+### ENV змінні (для локального запуску і Vercel)
+1) Bucket:
+- `FIREBASE_STORAGE_BUCKET` = `your-project-id.appspot.com`
+
+2) Service account:
+**Варіант A (рекомендовано):**
+- `FIREBASE_ADMIN_CREDENTIALS_JSON` = *вміст serviceAccountKey.json як один JSON-рядок*
+
+**Варіант B (локально):**
+- `GOOGLE_APPLICATION_CREDENTIALS` = шлях до serviceAccountKey.json
+
+> На Vercel зручніше використовувати варіант A (JSON в env).
