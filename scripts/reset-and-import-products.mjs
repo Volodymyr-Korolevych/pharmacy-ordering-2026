@@ -25,9 +25,17 @@ if (!projectId) {
 }
 
 if (!admin.apps.length) {
+
+  const keyPath = process.env.SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS
+  if (!keyPath) {
+    console.error('Missing SERVICE_ACCOUNT_JSON or GOOGLE_APPLICATION_CREDENTIALS')
+    process.exit(1)
+  }
+  const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'))
+  console.log(`Using service account key from: ${keyPath}`, serviceAccount)
+
   admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
-    projectId
+    credential: admin.credential.cert(serviceAccount)
   })
 }
 

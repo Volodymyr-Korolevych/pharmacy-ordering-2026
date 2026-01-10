@@ -2,6 +2,7 @@
   "name": "pharmacy-ordering-nuxt",
   "private": true,
   "type": "module",
+
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
@@ -15,17 +16,17 @@
     "products:reset-import": "node scripts/reset-and-import-products.mjs"
   },
   "dependencies": {
-    "nuxt": "^3.12.4",
+    "@pinia/nuxt": "^0.5.1",
     "firebase": "^10.13.0",
-    "pinia": "^2.1.7",
-    "@pinia/nuxt": "^0.5.1"
+    "nuxt": "^3.12.4",
+    "pinia": "^2.1.7"
   },
   "devDependencies": {
+    "@eslint/js": "^9.9.0",
     "@nuxtjs/tailwindcss": "^6.12.1",
     "eslint": "^9.9.0",
-    "@eslint/js": "^9.9.0",
-    "typescript": "^5.5.4",
     "firebase-admin": "^12.5.0",
+    "typescript": "^5.5.4",
     "xlsx": "^0.18.5"
   }
 }
