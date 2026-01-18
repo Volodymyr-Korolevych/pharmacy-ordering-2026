@@ -12,6 +12,7 @@
         </div>
       </div>
 
+      <!-- LOGIN -->
       <form v-if="mode === 'login'" class="grid gap-4" @submit.prevent="onLogin">
         <label class="grid gap-1">
           <span class="text-sm text-gray-700">Email / Логін</span>
@@ -51,6 +52,7 @@
         </p>
       </form>
 
+      <!-- REGISTER -->
       <form v-else class="grid gap-4" @submit.prevent="onRegister">
         <label class="grid gap-1">
           <span class="text-sm text-gray-700">Email</span>
@@ -95,6 +97,8 @@
 </template>
 
 <script setup lang="ts">
+import { uaAuthError, isEmailLike } from '~/utils/authUaErrors'
+
 const {
   authKind,
   ensureAuthReady,
@@ -103,6 +107,8 @@ const {
   fixedLoginAdmin,
   fixedLoginPharmacist
 } = useAuthFacade()
+
+const runtime = useRuntimeConfig()
 
 const mode = ref<'login' | 'register'>('login')
 
@@ -134,6 +140,11 @@ function resetMsg() {
   msgKind.value = 'info'
 }
 
+function setError(text: string) {
+  msgKind.value = 'error'
+  msg.value = text
+}
+
 function openRegister() {
   resetMsg()
   mode.value = 'register'
@@ -148,12 +159,33 @@ function openLogin() {
   password.value = ''
 }
 
+function looksLikePharmacistLogin(v: string) {
+  return /^apotheke\d{3}$/i.test(String(v || '').trim())
+}
+
 async function onLogin() {
   resetMsg()
   submitting.value = true
   try {
+    const l = String(login.value || '').trim()
+    const p = String(password.value || '').trim()
+
+    if (!l) {
+      setError('Вкажіть email або логін.')
+      return
+    }
+    if (!p) {
+      setError('Вкажіть пароль.')
+      return
+    }
+
     // 1) Admin (fixed)
-    if (fixedLoginAdmin(login.value, password.value)) {
+    if (l === runtime.public.adminLogin) {
+      const ok = fixedLoginAdmin(l, p)
+      if (!ok) {
+        setError('Невірний пароль адміністратора.')
+        return
+      }
       msgKind.value = 'success'
       msg.value = 'Успішний вхід.'
       await navigateTo('/admin/products')
@@ -161,22 +193,30 @@ async function onLogin() {
     }
 
     // 2) Pharmacist (fixed apotheke001..010)
-    const pr = fixedLoginPharmacist(login.value, password.value)
-    if (pr.ok) {
+    if (looksLikePharmacistLogin(l)) {
+      const pr = fixedLoginPharmacist(l, p)
+      if (!pr.ok) {
+        setError('Невірний пароль провізора.')
+        return
+      }
       msgKind.value = 'success'
       msg.value = 'Успішний вхід.'
       await navigateTo('/pharmacist/orders')
       return
     }
 
-    // 3) Client (Firebase email/password)
-    await clientLogin(login.value, password.value)
+    // If not fixed role: this must be client login via Firebase
+    if (!isEmailLike(l)) {
+      setError('Для входу клієнта введіть email (наприклад name@email.com).')
+      return
+    }
+
+    await clientLogin(l, p)
     msgKind.value = 'success'
     msg.value = 'Успішний вхід.'
     await navigateTo('/catalog')
   } catch (e: any) {
-    msgKind.value = 'error'
-    msg.value = e?.message || 'Не вдалося увійти. Перевірте дані.'
+    setError(uaAuthError(e, 'login'))
   } finally {
     submitting.value = false
   }
@@ -186,13 +226,32 @@ async function onRegister() {
   resetMsg()
   submitting.value = true
   try {
-    await clientRegister(regEmail.value, regPassword.value)
+    const email = String(regEmail.value || '').trim()
+    const pass = String(regPassword.value || '').trim()
+
+    if (!email) {
+      setError('Вкажіть email.')
+      return
+    }
+    if (!isEmailLike(email)) {
+      setError('Некоректний email. Перевірте адресу та спробуйте ще раз.')
+      return
+    }
+    if (!pass) {
+      setError('Вкажіть пароль.')
+      return
+    }
+    if (pass.length < 6) {
+      setError('Пароль має містити щонайменше 6 символів.')
+      return
+    }
+
+    await clientRegister(email, pass)
     msgKind.value = 'success'
     msg.value = 'Акаунт створено. Успішний вхід.'
     await navigateTo('/catalog')
   } catch (e: any) {
-    msgKind.value = 'error'
-    msg.value = e?.message || 'Не вдалося зареєструватися.'
+    setError(uaAuthError(e, 'register'))
   } finally {
     submitting.value = false
   }
