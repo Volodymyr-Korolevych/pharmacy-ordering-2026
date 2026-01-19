@@ -1,9 +1,10 @@
 <template>
   <div class="rounded-2xl border bg-white p-5 shadow-sm">
     <h1 class="text-xl font-bold">Мої замовлення</h1>
-    <p class="mt-1 text-sm text-gray-600">Статуси клієнту не відображаються.</p>
 
-    <div v-if="loading" class="mt-4 text-sm text-gray-600">Завантаження...</div>
+    <div v-if="loading" class="mt-4 text-sm text-gray-600">
+      Завантаження...
+    </div>
 
     <div v-else class="mt-4 grid gap-3">
       <button
@@ -14,20 +15,34 @@
         v-on:click="toggle(o.id)"
       >
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <div class="min-w-[220px]">
+          <div class="min-w-[240px]">
             <div class="text-sm font-semibold">
-              Замовлення {{ shortId(o.id) }}
+              Замовлення № {{ orderNumber(o) }}
             </div>
             <div class="mt-1 text-xs text-gray-500">
               {{ formatDate(o.createdAt) }}
             </div>
             <div class="mt-1 text-xs text-gray-500">
-              Аптека: <span class="font-semibold text-gray-700">{{ pharmacyLabel(o) }}</span>
+              Аптека:
+              <span class="font-semibold text-gray-700">
+                {{ pharmacyLabel(o) }}
+              </span>
+            </div>
+            <div class="mt-1 text-xs">
+              Статус:
+              <span
+                class="font-semibold"
+                v-bind:class="statusClass(o.status)"
+              >
+                {{ statusLabel(o.status) }}
+              </span>
             </div>
           </div>
 
           <div class="flex items-center gap-3">
-            <div class="text-sm font-bold">{{ formatPrice(o.total) }}</div>
+            <div class="text-sm font-bold">
+              {{ formatPrice(o.total) }}
+            </div>
             <div class="text-xs text-gray-500">
               {{ isOpen(o.id) ? '▲' : '▼' }}
             </div>
@@ -36,7 +51,7 @@
 
         <!-- DETAILS -->
         <div v-if="isOpen(o.id)" class="mt-4 grid gap-3">
-          <div class="rounded-xl border bg-white p-3">
+          <div class="rounded-xl border p-3">
             <div class="text-sm font-semibold">Препарати</div>
 
             <div v-if="!o.items || o.items.length === 0" class="mt-2 text-sm text-gray-600">
@@ -59,17 +74,23 @@
                 </div>
 
                 <div class="text-sm font-semibold text-gray-900">
-                  {{ formatPrice((Number(it.price || 0)) * (Number(it.qty || 0))) }}
+                  {{ formatPrice(Number(it.price) * Number(it.qty)) }}
                 </div>
               </div>
 
               <div class="rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
                 <div class="flex justify-between">
                   <span>Сума замовлення:</span>
-                  <span class="font-semibold">{{ formatPrice(o.total) }}</span>
+                  <span class="font-semibold">
+                    {{ formatPrice(o.total) }}
+                  </span>
                 </div>
-                <div class="mt-1 text-xs text-gray-500">Оплата: при отриманні</div>
-                <div class="mt-1 text-xs text-gray-500">Отримання: самовивіз</div>
+                <div class="mt-1 text-xs text-gray-500">
+                  Оплата: при отриманні
+                </div>
+                <div class="mt-1 text-xs text-gray-500">
+                  Отримання: самовивіз
+                </div>
               </div>
             </div>
           </div>
@@ -99,11 +120,6 @@ function isOpen(id: string) {
   return openedId.value === id
 }
 
-function shortId(id: string) {
-  const s = String(id || '')
-  return s.length > 6 ? s.slice(-6) : s
-}
-
 function formatPrice(v: any) {
   const n = Number(v || 0)
   return `${n.toFixed(2)} грн`
@@ -118,21 +134,36 @@ function formatDate(ts: any) {
 }
 
 function pharmacyLabel(o: any) {
-  // Підтримуємо новий формат (pharmacyName) і старий (pharmacyCode)
-  const name = String(o?.pharmacyName || '').trim()
-  if (name) return name
+  if (o?.pharmacyName) return o.pharmacyName
+  const found = PHARMACIES.find(p => p.code === o?.pharmacyCode)
+  return found ? found.name : '—'
+}
 
-  const code = String(o?.pharmacyCode || '').trim()
-  if (!code) return '—'
+function statusLabel(status: string) {
+  switch (status) {
+    case 'new': return 'Нове'
+    case 'issued': return 'Видане'
+    case 'cancelled': return 'Скасоване'
+    default: return '—'
+  }
+}
 
-  const found = PHARMACIES.find(p => p.code === code)
-  return found ? found.name : code
+function statusClass(status: string) {
+  if (status === 'new') return 'text-blue-700'
+  if (status === 'issued') return 'text-emerald-700'
+  if (status === 'cancelled') return 'text-red-700'
+  return 'text-gray-600'
+}
+
+function orderNumber(o: any) {
+  const ts = Number(o?.createdAt || 0)
+  if (!ts) return '—'
+  const a = String(ts).slice(-10)
+  return a.slice(0, 6) + '-' + a.slice(6, 10)
 }
 
 onMounted(async () => {
-  // щоб не ловити 500 SSR — роль перевіряємо тільки на клієнті
   await requireRole('client')
-
   if (!clientUser.value) return
   orders.value = await listForUser(clientUser.value.uid)
 })
