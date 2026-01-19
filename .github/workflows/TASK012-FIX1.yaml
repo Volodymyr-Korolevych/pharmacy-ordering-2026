@@ -1,4 +1,4 @@
-name: TASK012-FIX1 - Catalog: restore category filters + 4-up grid + full images (contain)
+name: TASK012-FIX1 - Catalog - restore category filters + 4-up grid + full images (contain)
 
 on:
   workflow_dispatch:
