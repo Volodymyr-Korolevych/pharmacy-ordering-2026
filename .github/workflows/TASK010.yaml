@@ -1,4 +1,4 @@
-name: TASK010 - Orders: expandable details + show pharmacy name
+name: TASK010 - Orders: expandable details + show pharmacy name 
 
 on:
   workflow_dispatch:
