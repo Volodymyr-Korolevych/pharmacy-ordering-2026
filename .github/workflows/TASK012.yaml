@@ -1,4 +1,4 @@
-name: TASK012X - Catalog: show full images (contain) + 4 cards per row
+name: TASK012XXX - Catalog
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 jobs:
-  task012X:
+  task012XXX:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
