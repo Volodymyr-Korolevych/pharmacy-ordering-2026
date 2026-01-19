@@ -1,34 +1,91 @@
 <template>
-  <div class="mx-auto max-w-2xl rounded-2xl border bg-white p-5 shadow-sm">
+  <div class="mx-auto max-w-3xl rounded-2xl border bg-white p-5 shadow-sm">
     <h1 class="text-xl font-bold">Оформлення замовлення</h1>
     <p class="mt-1 text-sm text-gray-600">Самовивіз. Оплата при отриманні.</p>
 
-    <AlertBox class="mt-4" :text="msg" :kind="msgKind" />
+    <AlertBox class="mt-4" v-bind:text="msg" v-bind:kind="msgKind" />
 
-    <div class="mt-4 grid gap-3">
+    <!-- Cart items list -->
+    <div class="mt-5 rounded-2xl border p-4">
+      <div class="flex items-center justify-between">
+        <div class="text-sm font-semibold">Товари у замовленні</div>
+        <div class="text-xs text-gray-500">
+          {{ displayItems.length }} позицій
+        </div>
+      </div>
+
+      <div v-if="displayItems.length === 0" class="mt-3 text-sm text-gray-600">
+        Кошик порожній.
+      </div>
+
+      <div v-else class="mt-3 grid gap-2">
+        <div
+          v-for="it in displayItems"
+          v-bind:key="it.productId"
+          class="grid grid-cols-[1fr_auto] gap-3 rounded-xl border p-3"
+        >
+          <div class="min-w-0">
+            <div class="truncate text-sm font-semibold text-gray-900">{{ it.name }}</div>
+            <div class="mt-1 text-xs text-gray-600">
+              {{ formatPrice(it.price) }} × {{ it.qty }}
+            </div>
+          </div>
+
+          <div class="text-sm font-semibold text-gray-900">
+            {{ formatPrice(it.price * it.qty) }}
+          </div>
+        </div>
+
+        <div class="mt-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
+          <div class="flex justify-between">
+            <span>Сума:</span>
+            <span class="font-semibold">{{ formatPrice(displayTotal) }}</span>
+          </div>
+          <div class="mt-1 text-xs text-gray-500">Оплата: при отриманні</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Form -->
+    <div class="mt-5 grid gap-3">
       <label class="grid gap-1">
         <span class="text-sm text-gray-700">Оберіть аптеку</span>
-        <select v-model="pharmacyCode" class="rounded-xl border px-3 py-2">
+        <select v-model="pharmacyCode" class="rounded-xl border px-3 py-2" v-bind:disabled="state === 'done'">
           <option value="">— Оберіть —</option>
-          <option v-for="p in PHARMACIES" :key="p.code" :value="p.code">
+          <option v-for="p in PHARMACIES" v-bind:key="p.code" v-bind:value="p.code">
             {{ p.code }} — {{ p.name }}, {{ p.address }}
           </option>
         </select>
       </label>
 
-      <div class="rounded-xl border bg-gray-50 p-3 text-sm text-gray-700">
-        <div class="flex justify-between">
-          <span>Сума:</span>
-          <span class="font-semibold">{{ cart.total.toFixed(2) }} грн</span>
+      <!-- Action area -->
+      <div class="mt-1">
+        <UiButton
+          v-if="state !== 'done'"
+          variant="primary"
+          class="w-full"
+          v-bind:disabled="submitting || displayItems.length === 0"
+          v-on:click="submit"
+        >
+          Підтвердити замовлення
+        </UiButton>
+
+        <div
+          v-else
+          class="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-semibold text-emerald-800"
+        >
+          Замовлення прийняте
         </div>
-        <div class="mt-1 text-xs text-gray-500">Оплата: при отриманні</div>
       </div>
 
-      <UiButton variant="primary" :disabled="submitting" @click="submit">
-        Підтвердити замовлення
+      <UiButton
+        v-if="state === 'done'"
+        class="w-full"
+        v-bind:disabled="!createdOrderId"
+        v-on:click="goOrders"
+      >
+        Перейти в історію замовлень
       </UiButton>
-
-      <UiButton v-if="createdOrderId" @click="goOrders">Перейти в історію замовлень</UiButton>
     </div>
   </div>
 </template>
@@ -37,29 +94,63 @@
 import { PHARMACIES } from '~/data/pharmacies'
 import { useCartStore } from '~/stores/cart'
 
-await requireRole('client')
-
 const cart = useCartStore()
 const { clientUser } = useAuthFacade()
 const { create } = useOrders()
 
 const pharmacyCode = ref('')
 const submitting = ref(false)
+
 const msg = ref('')
 const msgKind = ref<'info'|'error'|'success'>('info')
+
 const createdOrderId = ref<string>('')
 
-onMounted(() => {
-  if (cart.items.length === 0) navigateTo('/cart')
+// UI state requirement #1
+const state = ref<'form'|'done'>('form')
+
+// snapshot of items, to keep list visible after cart.clear()
+const submittedItems = ref<Array<{ productId: string; name: string; price: number; qty: number }>>([])
+const submittedTotal = ref<number>(0)
+
+const displayItems = computed(() => {
+  return state.value === 'done' ? submittedItems.value : cart.items
+})
+
+const displayTotal = computed(() => {
+  return state.value === 'done' ? submittedTotal.value : cart.total
+})
+
+function formatPrice(v: any) {
+  const n = Number(v || 0)
+  return `${n.toFixed(2)} грн`
+}
+
+onMounted(async () => {
+  await requireRole('client')
+
+  if (cart.items.length === 0) {
+    navigateTo('/cart')
+    return
+  }
 })
 
 async function submit () {
   msg.value = ''
+  msgKind.value = 'info'
+
+  if (displayItems.value.length === 0) {
+    msgKind.value = 'error'
+    msg.value = 'Кошик порожній.'
+    return
+  }
+
   if (!pharmacyCode.value) {
     msgKind.value = 'error'
     msg.value = 'Оберіть аптеку.'
     return
   }
+
   if (!clientUser.value) {
     msgKind.value = 'error'
     msg.value = 'Сесія закінчилась. Увійдіть ще раз.'
@@ -68,16 +159,28 @@ async function submit () {
 
   submitting.value = true
   try {
+    // snapshot before clearing cart
+    submittedItems.value = displayItems.value.map(i => ({
+      productId: i.productId,
+      name: i.name,
+      price: Number(i.price || 0),
+      qty: Number(i.qty || 0)
+    }))
+    submittedTotal.value = Number(displayTotal.value || 0)
+
     const id = await create({
       userId: clientUser.value.uid,
       pharmacyCode: pharmacyCode.value,
-      items: cart.items.map(i => ({ productId: i.productId, name: i.name, price: i.price, qty: i.qty })),
-      total: cart.total,
+      items: submittedItems.value,
+      total: submittedTotal.value,
       status: 'new',
       createdAt: Date.now()
     })
+
     createdOrderId.value = id
     cart.clear()
+
+    state.value = 'done'
     msgKind.value = 'success'
     msg.value = 'Замовлення прийняте.'
   } catch (e: any) {
