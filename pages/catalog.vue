@@ -2,71 +2,101 @@
   <div class="grid gap-6">
     <div class="rounded-2xl border bg-white p-5 shadow-sm">
       <h1 class="text-xl font-bold">Каталог ліків</h1>
-      <p class="mt-1 text-sm text-gray-600">Категорії фіксовані (2 рівні). Пошуку/фільтрів немає.</p>
-
-      <div class="mt-4 grid gap-4 md:grid-cols-2">
-        <label class="grid gap-1">
-          <span class="text-sm text-gray-700">Категорія (1 рівень)</span>
-          <select v-model="parent" class="rounded-xl border px-3 py-2">
-            <option value="">— Усі —</option>
-            <option v-for="p in parents" :key="p" :value="p">{{ p }}</option>
-          </select>
-        </label>
-
-        <label class="grid gap-1">
-          <span class="text-sm text-gray-700">Підкатегорія (2 рівень)</span>
-          <select v-model="child" class="rounded-xl border px-3 py-2" :disabled="!parent">
-            <option value="">— Усі —</option>
-            <option v-for="c in children" :key="c" :value="c">{{ c }}</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="mt-4">
-        <UiButton @click="resetFilters">Скинути</UiButton>
-      </div>
+      <p class="mt-1 text-sm text-gray-600">Оберіть препарати та додайте в кошик.</p>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-2">
-      <div v-if="loading" class="text-sm text-gray-600">Завантаження...</div>
-      <ProductCard v-for="p in filtered" :key="p.id" :product="p" />
-      <div v-if="!loading && filtered.length === 0" class="rounded-2xl border bg-white p-5 text-sm text-gray-600">
-        Нічого не знайдено.
+    <div v-if="loading" class="text-sm text-gray-600">Завантаження...</div>
+
+    <div v-else class="grid gap-4">
+      <!-- 4 cards per row on large screens -->
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div
+          v-for="p in products"
+          v-bind:key="p.id"
+          class="rounded-2xl border bg-white p-3 shadow-sm hover:shadow-md transition-shadow"
+        >
+          <!-- IMAGE: smaller and NOT cropped -->
+          <div class="rounded-xl border bg-white p-2">
+            <div class="h-28 w-full">
+              <img
+                v-if="imageSrc(p)"
+                v-bind:src="imageSrc(p)"
+                alt=""
+                class="h-full w-full object-contain"
+              />
+            </div>
+          </div>
+
+          <!-- text (font unchanged) -->
+          <div class="mt-3 grid gap-1">
+            <div class="line-clamp-2 text-sm font-semibold text-gray-900">
+              {{ p.name }}
+            </div>
+
+            <div class="text-xs text-gray-500">
+              {{ p.parentCategory }} / {{ p.childCategory }}
+            </div>
+
+            <div class="mt-1 flex items-center justify-between gap-2">
+              <div class="text-sm font-bold text-gray-900">
+                {{ formatPrice(p.price) }}
+              </div>
+              <div class="text-xs text-gray-500">
+                {{ p.unit }}
+              </div>
+            </div>
+
+            <UiButton class="mt-2 w-full" v-on:click="addToCart(p)">
+              Додати в кошик
+            </UiButton>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="products.length === 0" class="text-sm text-gray-600">
+        Товарів поки немає.
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { CATEGORIES } from '~/data/categories'
+import { useCartStore } from '~/stores/cart'
+
+const cart = useCartStore()
+const { products, loading, fetchAll } = useProducts() as any
 
 onMounted(async () => {
-  document.title = 'Каталог ліків'
+  // щоб не ловити SSR 500 (як у тебе раніше)
   await requireRole('client')
-})
-
-const { products, loading, fetchAll } = useProducts()
-
-const parent = ref<string>('')
-const child = ref<string>('')
-
-const parents = computed(() => Object.keys(CATEGORIES))
-const children = computed(() => parent.value ? (CATEGORIES as any)[parent.value] as string[] : [])
-
-const filtered = computed(() => {
-  return products.value.filter(p => {
-    if (parent.value && p.parentCategory !== parent.value) return false
-    if (child.value && p.childCategory !== child.value) return false
-    return true
-  })
-})
-
-onMounted(async () => {
   await fetchAll()
 })
 
-function resetFilters () {
-  parent.value = ''
-  child.value = ''
+function formatPrice(v: any) {
+  const n = Number(v || 0)
+  return `${n.toFixed(2)} грн`
+}
+
+function normalizeLocalImagePath(imagePath: string) {
+  const raw = String(imagePath || '').trim().replace(/\\/g, '/')
+  if (!raw) return ''
+  const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
+  return '/' + rel
+}
+
+function imageSrc(p: any) {
+  // Storage wins if exists
+  if (p?.imageUrl) return String(p.imageUrl)
+  if (p?.imagePath) return normalizeLocalImagePath(String(p.imagePath))
+  return ''
+}
+
+function addToCart(p: any) {
+  cart.add({
+    productId: p.id,
+    name: p.name,
+    price: Number(p.price || 0),
+    qty: 1
+  })
 }
 </script>
