@@ -1,4 +1,4 @@
-name: TASK012 - Catalog: show full images (contain) + 4 cards per row, smaller image
+name: TASK012 - Catalog: show full images (contain) + 4 cards per row
 
 on:
   workflow_dispatch:
