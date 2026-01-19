@@ -1,4 +1,4 @@
-name: TASK010 - Orders: expandable details + show pharmacy name 
+name: TASK010XX - Orders: expandable details + show pharmacy name 
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 jobs:
-  task010:
+  task010XX:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
