@@ -21,8 +21,9 @@ const props = defineProps<{
 defineEmits<{ (e: 'click'): void }>()
 
 const variantClass = computed(() => {
-  if (props.variant === 'primary') return 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 hover:border-emerald-700'
+  if (props.variant === 'primary') return 'border-emerald-600 bg-emerald-600 text-white hover:bg-green-700 hover:border-emerald-700'
   if (props.variant === 'danger') return 'border-red-600 bg-red-600 text-white hover:bg-red-700 hover:border-red-700'
+  if (props.variant === 'ghost') return 'border-black bg-transparent text-gray-900 hover:bg-gray-300'
   return ''
 })
 </script>

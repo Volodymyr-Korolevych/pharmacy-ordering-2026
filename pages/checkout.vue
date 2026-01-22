@@ -53,7 +53,7 @@
         <select v-model="pharmacyCode" class="rounded-xl border px-3 py-2" v-bind:disabled="state === 'done'">
           <option value="">— Оберіть —</option>
           <option v-for="p in PHARMACIES" v-bind:key="p.code" v-bind:value="p.code">
-            {{ p.code }} — {{ p.name }}, {{ p.address }}
+            {{ p.name }}, {{ p.address }}
           </option>
         </select>
       </label>

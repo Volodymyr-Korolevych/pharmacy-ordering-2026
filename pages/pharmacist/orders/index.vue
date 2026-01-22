@@ -1,9 +1,6 @@
 <template>
   <div class="rounded-2xl border bg-white p-5 shadow-sm">
-    <h1 class="text-xl font-bold">Замовлення моєї аптеки</h1>
-    <p class="mt-1 text-sm text-gray-600">
-      Ви бачите лише замовлення аптеки: <span class="font-semibold">{{ pharmacyCode }}</span>
-    </p>
+    <h1 class="text-xl font-bold">Замовлення аптеки: {{ pharmacyLabel() }}</h1>
 
     <div v-if="loading" class="mt-4 text-sm text-gray-600">Завантаження...</div>
 
@@ -15,7 +12,7 @@
         class="rounded-xl border p-3 hover:bg-gray-50"
       >
         <div class="flex items-center justify-between">
-          <div class="text-sm font-semibold">Замовлення {{ o.id?.slice(-6) }}</div>
+          <div class="text-sm font-semibold">Замовлення {{ orderNumber(o) }}</div>
           <div class="text-sm font-bold">{{ o.total.toFixed(2) }} грн</div>
         </div>
         <div class="mt-1 text-xs text-gray-500">
@@ -23,14 +20,15 @@
         </div>
       </NuxtLink>
 
-      <div v-if="orders.length === 0" class="text-sm text-gray-600">
-        Замовлень поки немає.
+      <div v-if="orders.length === 0" class="text-sm text-gray-600">  
+        Замовлень поки немає. 
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { PHARMACIES } from '~/data/pharmacies'
 await requireRole('pharmacist')
 
 const { pharmacyCode } = useAuthFacade()
@@ -41,6 +39,18 @@ function statusUa (s: string) {
   if (s === 'issued') return 'видане'
   if (s === 'canceled') return 'скасоване'
   return 'нове'
+}
+
+function pharmacyLabel() {
+  const found = PHARMACIES.find(p => p.code === pharmacyCode.value)
+  return found ? found.name : '—'
+}
+
+function orderNumber(o: any) {
+  const ts = Number(o?.createdAt || 0)
+  if (!ts) return '—'
+  const a = String(ts).slice(-10)
+  return a.slice(0, 6) + '-' + a.slice(6, 10)
 }
 
 onMounted(async () => {

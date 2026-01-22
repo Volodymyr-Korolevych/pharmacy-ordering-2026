@@ -22,7 +22,7 @@
     </div>
 
     <div class="mt-4 flex flex-wrap gap-2">
-      <UiButton :disabled="saving" @click="set('new')">Нове</UiButton>
+      <UiButton :disabled="saving" variant="ghost" @click="set('new')">Нове</UiButton>
       <UiButton :disabled="saving" variant="primary" @click="set('issued')">Видане</UiButton>
       <UiButton :disabled="saving" variant="danger" @click="set('canceled')">Скасоване</UiButton>
     </div>
