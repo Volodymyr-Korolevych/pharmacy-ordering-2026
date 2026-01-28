@@ -1,0 +1,266 @@
+name: TASK015 - Catalog: restore clickable product cards + fix ProductCard image (contain)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task015:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Overwrite components/ProductCard.vue
+        shell: bash
+        run: |
+          mkdir -p components
+          cat > components/ProductCard.vue <<'EOF'
+          <template>
+            <div class="rounded-2xl border bg-white p-3 shadow-sm hover:shadow-md transition-shadow">
+              <!-- clickable area -->
+              <NuxtLink
+                v-if="productLink"
+                v-bind:to="productLink"
+                class="block"
+              >
+                <div class="rounded-xl border bg-white p-2">
+                  <div class="h-28 w-full">
+                    <img
+                      v-if="imgSrc"
+                      v-bind:src="imgSrc"
+                      alt=""
+                      class="h-full w-full object-contain"
+                    />
+                  </div>
+                </div>
+
+                <div class="mt-3 grid gap-1">
+                  <div class="line-clamp-2 text-sm font-semibold text-gray-900">
+                    {{ product.name }}
+                  </div>
+
+                  <div class="text-xs text-gray-500">
+                    {{ product.parentCategory }} / {{ product.childCategory }}
+                  </div>
+
+                  <div class="mt-1 text-xs text-gray-600">
+                    {{ product.manufacturer }}
+                  </div>
+
+                  <div class="mt-1 flex items-center justify-between gap-2">
+                    <div class="text-sm font-bold text-gray-900">
+                      {{ formatPrice(product.price) }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {{ product.unit }}
+                    </div>
+                  </div>
+                </div>
+              </NuxtLink>
+
+              <!-- fallback if no id -->
+              <div v-else>
+                <div class="rounded-xl border bg-white p-2">
+                  <div class="h-28 w-full">
+                    <img
+                      v-if="imgSrc"
+                      v-bind:src="imgSrc"
+                      alt=""
+                      class="h-full w-full object-contain"
+                    />
+                  </div>
+                </div>
+
+                <div class="mt-3 grid gap-1">
+                  <div class="line-clamp-2 text-sm font-semibold text-gray-900">
+                    {{ product.name }}
+                  </div>
+
+                  <div class="text-xs text-gray-500">
+                    {{ product.parentCategory }} / {{ product.childCategory }}
+                  </div>
+
+                  <div class="mt-1 text-xs text-gray-600">
+                    {{ product.manufacturer }}
+                  </div>
+
+                  <div class="mt-1 flex items-center justify-between gap-2">
+                    <div class="text-sm font-bold text-gray-900">
+                      {{ formatPrice(product.price) }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {{ product.unit }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- button stays separate so it doesn't break navigation -->
+              <UiButton class="mt-2 w-full" v-on:click="addToCart">
+                Додати в кошик
+              </UiButton>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { useCartStore } from '~/stores/cart'
+
+          const props = defineProps<{ product: any }>()
+
+          const cart = useCartStore()
+
+          const productLink = computed(() => {
+            const id = props.product?.id
+            return id ? `/product/${id}` : ''
+          })
+
+          function normalizeLocalImagePath(imagePath: string) {
+            const raw = String(imagePath || '').trim().replace(/\\/g, '/')
+            if (!raw) return ''
+            const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
+            return '/' + rel
+          }
+
+          const imgSrc = computed(() => {
+            if (props.product?.imageUrl) return String(props.product.imageUrl)
+            if (props.product?.imagePath) return normalizeLocalImagePath(String(props.product.imagePath))
+            return ''
+          })
+
+          function formatPrice(v: any) {
+            const n = Number(v || 0)
+            return `${n.toFixed(2)} грн`
+          }
+
+          function addToCart () {
+            cart.add({
+              productId: props.product.id,
+              name: props.product.name,
+              price: Number(props.product.price || 0),
+              qty: 1
+            })
+          }
+          </script>
+          EOF
+
+      - name: Overwrite pages/catalog.vue (use ProductCard + keep filters)
+        shell: bash
+        run: |
+          mkdir -p pages
+          cat > pages/catalog.vue <<'EOF'
+          <template>
+            <div class="grid gap-6">
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h1 class="text-xl font-bold">Каталог ліків</h1>
+                    <p class="mt-1 text-sm text-gray-600">Оберіть категорію та додайте препарати в кошик.</p>
+                  </div>
+
+                  <!-- Filters -->
+                  <div class="grid w-full gap-3 sm:w-auto sm:grid-cols-2">
+                    <label class="grid gap-1">
+                      <span class="text-sm text-gray-700">Категорія</span>
+                      <select
+                        v-model="selectedParent"
+                        class="min-w-[220px] rounded-xl border px-3 py-2"
+                        v-on:change="onParentChanged"
+                      >
+                        <option value="">Усі категорії</option>
+                        <option v-for="p in parents" v-bind:key="p" v-bind:value="p">
+                          {{ p }}
+                        </option>
+                      </select>
+                    </label>
+
+                    <label class="grid gap-1">
+                      <span class="text-sm text-gray-700">Підкатегорія</span>
+                      <select
+                        v-model="selectedChild"
+                        class="min-w-[220px] rounded-xl border px-3 py-2"
+                        v-bind:disabled="!selectedParent"
+                      >
+                        <option value="">Усі підкатегорії</option>
+                        <option v-for="c in children" v-bind:key="c" v-bind:value="c">
+                          {{ c }}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="loading" class="text-sm text-gray-600">Завантаження...</div>
+
+              <div v-else class="grid gap-4">
+                <div class="text-sm text-gray-600">
+                  Показано: <b>{{ filtered.length }}</b> товарів
+                  <span v-if="selectedParent"> • {{ selectedParent }}</span>
+                  <span v-if="selectedChild"> / {{ selectedChild }}</span>
+                </div>
+
+                <!-- 4 cards per row on large screens -->
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  <ProductCard
+                    v-for="p in filtered"
+                    v-bind:key="p.id"
+                    v-bind:product="p"
+                  />
+                </div>
+
+                <div v-if="filtered.length === 0" class="text-sm text-gray-600">
+                  Нічого не знайдено для обраних фільтрів.
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { CATEGORIES } from '~/data/categories'
+
+          const { products, loading, fetchAll } = useProducts() as any
+
+          const selectedParent = ref<string>('')
+          const selectedChild = ref<string>('')
+
+          const parents = computed(() => Object.keys(CATEGORIES))
+
+          const children = computed(() => {
+            if (!selectedParent.value) return []
+            return (CATEGORIES as any)[selectedParent.value] as string[]
+          })
+
+          const filtered = computed(() => {
+            const list = Array.isArray(products.value) ? products.value : []
+            const p = selectedParent.value
+            const c = selectedChild.value
+
+            return list.filter((x: any) => {
+              if (p && x.parentCategory !== p) return false
+              if (c && x.childCategory !== c) return false
+              return true
+            })
+          })
+
+          function onParentChanged () {
+            selectedChild.value = ''
+          }
+
+          onMounted(async () => {
+            await requireRole('client') // щоб не ловити SSR 500
+            await fetchAll()
+          })
+          </script>
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add components/ProductCard.vue pages/catalog.vue
+          git commit -m "TASK015: restore clickable product cards; fix ProductCard image contain + correct local imagePath" || echo "No changes to commit"
+          git push
