@@ -51,47 +51,11 @@
 
       <!-- 4 cards per row on large screens -->
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <div
+        <ProductCard
           v-for="p in filtered"
           v-bind:key="p.id"
-          class="rounded-2xl border bg-white p-3 shadow-sm hover:shadow-md transition-shadow"
-        >
-          <!-- IMAGE: smaller and NOT cropped -->
-          <div class="rounded-xl border bg-white p-2">
-            <div class="h-28 w-full">
-              <img
-                v-if="imageSrc(p)"
-                v-bind:src="imageSrc(p)"
-                alt=""
-                class="h-full w-full object-contain"
-              />
-            </div>
-          </div>
-
-          <!-- text (font unchanged) -->
-          <div class="mt-3 grid gap-1">
-            <div class="line-clamp-2 text-sm font-semibold text-gray-900">
-              {{ p.name }}
-            </div>
-
-            <div class="text-xs text-gray-500">
-              {{ p.parentCategory }} / {{ p.childCategory }}
-            </div>
-
-            <div class="mt-1 flex items-center justify-between gap-2">
-              <div class="text-sm font-bold text-gray-900">
-                {{ formatPrice(p.price) }}
-              </div>
-              <div class="text-xs text-gray-500">
-                {{ p.unit }}
-              </div>
-            </div>
-
-            <UiButton class="mt-2 w-full" v-on:click="addToCart(p)">
-              Додати в кошик
-            </UiButton>
-          </div>
-        </div>
+          v-bind:product="p"
+        />
       </div>
 
       <div v-if="filtered.length === 0" class="text-sm text-gray-600">
@@ -103,9 +67,7 @@
 
 <script setup lang="ts">
 import { CATEGORIES } from '~/data/categories'
-import { useCartStore } from '~/stores/cart'
 
-const cart = useCartStore()
 const { products, loading, fetchAll } = useProducts() as any
 
 const selectedParent = ref<string>('')
@@ -131,36 +93,7 @@ const filtered = computed(() => {
 })
 
 function onParentChanged () {
-  // коли змінюємо 1 рівень — скидаємо 2 рівень
   selectedChild.value = ''
-}
-
-function formatPrice(v: any) {
-  const n = Number(v || 0)
-  return `${n.toFixed(2)} грн`
-}
-
-function normalizeLocalImagePath(imagePath: string) {
-  const raw = String(imagePath || '').trim().replace(/\\/g, '/')
-  if (!raw) return ''
-  const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
-  return '/' + rel
-}
-
-function imageSrc(p: any) {
-  // Storage wins if exists
-  if (p?.imageUrl) return String(p.imageUrl)
-  if (p?.imagePath) return normalizeLocalImagePath(String(p.imagePath))
-  return ''
-}
-
-function addToCart(p: any) {
-  cart.add({
-    productId: p.id,
-    name: p.name,
-    price: Number(p.price || 0),
-    qty: 1
-  })
 }
 
 onMounted(async () => {
