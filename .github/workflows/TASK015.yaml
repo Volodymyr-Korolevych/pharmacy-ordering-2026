@@ -1,4 +1,4 @@
-name: TASK015 - Catalog: restore clickable product cards + fix ProductCard image (contain)
+name: TASK015 - Catalog restore clickable product cards + fix ProductCard image (contain)
 
 on:
   workflow_dispatch:
