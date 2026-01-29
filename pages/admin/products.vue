@@ -96,9 +96,14 @@
           <div class="text-lg font-bold">
             {{ editingId ? 'Редагувати товар' : 'Додати товар' }}
           </div>
+        <div class="flex items-center justify-end gap-2 border-t p-5"> 
+          <UiButton v-on:click="closeModal">Скасувати</UiButton>
+          <UiButton variant="primary" v-bind:disabled="saving" v-on:click="save">
+            Зберегти
+          </UiButton>
           <button class="rounded-xl px-3 py-2 text-sm hover:bg-gray-100" v-on:click="closeModal">✕</button>
         </div>
-
+</div>
         <!-- Tabs -->
         <div class="border-b px-5">
           <div class="flex gap-2 py-3">
@@ -122,7 +127,7 @@
         </div>
 
         <!-- scrollable content -->
-        <div class="max-h-[70vh] overflow-auto p-5">
+        <div class="max-h-[50vh] overflow-auto p-5">
           <!-- TAB: MAIN -->
           <div v-if="tab === 'main'" class="grid gap-5">
             <div class="grid gap-4 lg:grid-cols-[220px_1fr]">
@@ -137,26 +142,6 @@
                   <input type="file" accept="image/*" v-on:change="onFilePicked" />
                 </label>
 
-                <details class="rounded-2xl border bg-gray-50 p-3">
-                  <summary class="cursor-pointer text-sm font-semibold text-gray-800">
-                    Додатково (службова інформація)
-                  </summary>
-                  <div class="mt-3 grid gap-2 text-sm">
-                    <div class="grid gap-1">
-                      <div class="text-xs text-gray-600">imagePath (локальне)</div>
-                      <div class="rounded-xl border bg-white px-3 py-2 text-xs text-gray-800">
-                        {{ form.imagePath || '—' }}
-                      </div>
-                    </div>
-
-                    <div class="grid gap-1">
-                      <div class="text-xs text-gray-600">imageUrl (Storage)</div>
-                      <div class="rounded-xl border bg-white px-3 py-2 text-xs text-gray-800 break-all">
-                        {{ form.imageUrl || '—' }}
-                      </div>
-                    </div>
-                  </div>
-                </details>
               </div>
             </div>
 
@@ -222,12 +207,7 @@
           </div>
         </div>
 
-        <div class="flex items-center justify-end gap-2 border-t p-5">
-          <UiButton v-on:click="closeModal">Скасувати</UiButton>
-          <UiButton variant="primary" v-bind:disabled="saving" v-on:click="save">
-            Зберегти
-          </UiButton>
-        </div>
+
       </div>
     </div>
   </div>

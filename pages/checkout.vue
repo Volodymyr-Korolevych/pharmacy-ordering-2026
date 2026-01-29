@@ -3,8 +3,6 @@
     <h1 class="text-xl font-bold">Оформлення замовлення</h1>
     <p class="mt-1 text-sm text-gray-600">Самовивіз. Оплата при отриманні.</p>
 
-    <AlertBox class="mt-4" v-bind:text="msg" v-bind:kind="msgKind" />
-
     <!-- Cart items list -->
     <div class="mt-5 rounded-2xl border p-4">
       <div class="flex items-center justify-between">
@@ -70,12 +68,7 @@
           Підтвердити замовлення
         </UiButton>
 
-        <div
-          v-else
-          class="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-semibold text-emerald-800"
-        >
-          Замовлення прийняте
-        </div>
+        <AlertBox v-else class="mt-4" v-bind:text="'Замовлення прийняте'" v-bind:kind="msgKind" />
       </div>
 
       <UiButton
