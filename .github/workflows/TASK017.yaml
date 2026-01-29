@@ -1,4 +1,4 @@
-name: TASK017 - Client orders: show product images in items list
+name: TASK017 - Client orders show product images in items list
 
 on:
   workflow_dispatch:
