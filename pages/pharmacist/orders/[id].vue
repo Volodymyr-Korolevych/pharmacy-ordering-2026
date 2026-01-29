@@ -4,7 +4,7 @@
   </div>
 
   <div v-else class="rounded-2xl border bg-white p-5 shadow-sm">
-    <h1 class="text-xl font-bold">Замовлення {{ order.id?.slice(-6) }}</h1>
+    <h1 class="text-xl font-bold">Замовлення {{ orderNumber(order) }}</h1>
     <div class="mt-1 text-sm text-gray-600">
       {{ new Date(order.createdAt).toLocaleString('uk-UA') }} • Аптека: {{ order.pharmacyCode }}
     </div>
@@ -49,6 +49,13 @@ function statusUa (s: string) {
   if (s === 'issued') return 'видане'
   if (s === 'canceled') return 'скасоване'
   return 'нове'
+}
+
+function orderNumber(o: any) {
+  const ts = Number(o?.createdAt || 0)
+  if (!ts) return '—'
+  const a = String(ts).slice(-10)
+  return a.slice(0, 6) + '-' + a.slice(6, 10)
 }
 
 onMounted(async () => {
