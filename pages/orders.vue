@@ -51,7 +51,7 @@
 
         <!-- DETAILS -->
         <div v-if="isOpen(o.id)" class="mt-4 grid gap-3">
-          <div class="rounded-xl border p-3">
+          <div class="rounded-xl border bg-white p-3">
             <div class="text-sm font-semibold">Препарати</div>
 
             <div v-if="!o.items || o.items.length === 0" class="mt-2 text-sm text-gray-600">
@@ -62,35 +62,41 @@
               <div
                 v-for="it in o.items"
                 v-bind:key="it.productId || it.name"
-                class="grid grid-cols-[1fr_auto] gap-3 rounded-xl border p-3"
+                class="grid grid-cols-[1fr_auto] items-center gap-3 rounded-xl border p-3"
               >
-                <div class="min-w-0">
-                  <div class="truncate text-sm font-semibold text-gray-900">
-                    {{ it.name }}
+                <div class="flex min-w-0 items-center gap-3">
+                  <!-- image -->
+                  <div class="h-12 w-12 shrink-0 overflow-hidden rounded-xl border bg-gray-50 p-1">
+                    <img
+                      v-if="itemImageByProductId[String(it.productId || '')]"
+                      v-bind:src="itemImageByProductId[String(it.productId || '')]"
+                      alt=""
+                      class="h-full w-full object-contain"
+                    />
                   </div>
-                  <div class="mt-1 text-xs text-gray-600">
-                    {{ formatPrice(it.price) }} × {{ it.qty }}
+
+                  <div class="min-w-0">
+                    <div class="truncate text-sm font-semibold text-gray-900">
+                      {{ it.name }}
+                    </div>
+                    <div class="mt-1 text-xs text-gray-600">
+                      {{ formatPrice(it.price) }} × {{ it.qty }}
+                    </div>
                   </div>
                 </div>
 
                 <div class="text-sm font-semibold text-gray-900">
-                  {{ formatPrice(Number(it.price) * Number(it.qty)) }}
+                  {{ formatPrice((Number(it.price || 0)) * (Number(it.qty || 0))) }}
                 </div>
               </div>
 
               <div class="rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
                 <div class="flex justify-between">
                   <span>Сума замовлення:</span>
-                  <span class="font-semibold">
-                    {{ formatPrice(o.total) }}
-                  </span>
+                  <span class="font-semibold">{{ formatPrice(o.total) }}</span>
                 </div>
-                <div class="mt-1 text-xs text-gray-500">
-                  Оплата: при отриманні
-                </div>
-                <div class="mt-1 text-xs text-gray-500">
-                  Отримання: самовивіз
-                </div>
+                <div class="mt-1 text-xs text-gray-500">Оплата: при отриманні</div>
+                <div class="mt-1 text-xs text-gray-500">Отримання: самовивіз</div>
               </div>
             </div>
           </div>
@@ -105,6 +111,7 @@
 </template>
 
 <script setup lang="ts">
+import { doc, getDoc } from 'firebase/firestore'
 import { PHARMACIES } from '~/data/pharmacies'
 
 const { clientUser } = useAuthFacade()
@@ -112,6 +119,8 @@ const { listForUser, loading } = useOrders()
 
 const orders = ref<any[]>([])
 const openedId = ref<string>('')
+
+const itemImageByProductId = reactive<Record<string, string>>({})
 
 function toggle(id: string) {
   openedId.value = openedId.value === id ? '' : id
@@ -134,9 +143,14 @@ function formatDate(ts: any) {
 }
 
 function pharmacyLabel(o: any) {
-  if (o?.pharmacyName) return o.pharmacyName
-  const found = PHARMACIES.find(p => p.code === o?.pharmacyCode)
-  return found ? found.name : '—'
+  const name = String(o?.pharmacyName || '').trim()
+  if (name) return name
+
+  const code = String(o?.pharmacyCode || '').trim()
+  if (!code) return '—'
+
+  const found = PHARMACIES.find(p => p.code === code)
+  return found ? found.name : code
 }
 
 function statusLabel(status: string) {
@@ -144,6 +158,7 @@ function statusLabel(status: string) {
     case 'new': return 'Нове'
     case 'issued': return 'Видане'
     case 'cancelled': return 'Скасоване'
+    case 'canceled': return 'Скасоване' // на випадок старого написання
     default: return '—'
   }
 }
@@ -151,7 +166,7 @@ function statusLabel(status: string) {
 function statusClass(status: string) {
   if (status === 'new') return 'text-blue-700'
   if (status === 'issued') return 'text-emerald-700'
-  if (status === 'cancelled') return 'text-red-700'
+  if (status === 'cancelled' || status === 'canceled') return 'text-red-700'
   return 'text-gray-600'
 }
 
@@ -162,9 +177,52 @@ function orderNumber(o: any) {
   return a.slice(0, 6) + '-' + a.slice(6, 10)
 }
 
+function normalizeLocalImagePath(imagePath: string) {
+  const raw = String(imagePath || '').trim().replace(/\\/g, '/')
+  if (!raw) return ''
+  const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
+  return '/' + rel
+}
+
+async function preloadImagesForOrders(list: any[]) {
+  try {
+    const nuxtApp = useNuxtApp()
+    const fb = (nuxtApp as any).$firebase
+    if (!fb?.db) return
+
+    const allIds = new Set<string>()
+    for (const o of (list || [])) {
+      for (const it of (o?.items || [])) {
+        const id = String(it?.productId || '').trim()
+        if (id) allIds.add(id)
+      }
+    }
+
+    for (const id of Array.from(allIds)) {
+      if (itemImageByProductId[id]) continue
+
+      const snap = await getDoc(doc(fb.db, 'products', id))
+      if (!snap.exists()) continue
+      const p: any = snap.data() || {}
+
+      const src = p.imageUrl
+        ? String(p.imageUrl)
+        : (p.imagePath ? normalizeLocalImagePath(String(p.imagePath)) : '')
+
+      if (src) itemImageByProductId[id] = src
+    }
+  } catch {
+    // якщо не вдалось підтягнути — просто не показуємо картинки
+  }
+}
+
 onMounted(async () => {
   await requireRole('client')
+
   if (!clientUser.value) return
-  orders.value = await listForUser(clientUser.value.uid)
+  const list = await listForUser(clientUser.value.uid)
+  orders.value = list || []
+
+  await preloadImagesForOrders(orders.value)
 })
 </script>
