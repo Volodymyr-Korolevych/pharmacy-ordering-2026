@@ -10,29 +10,61 @@
     </div>
 
     <div class="mt-4 grid gap-2">
-      <div v-for="it in order.items" :key="it.productId" class="flex justify-between rounded-xl border p-3 text-sm">
-        <div>{{ it.name }} × {{ it.qty }}</div>
-        <div class="font-semibold">{{ (it.price * it.qty).toFixed(2) }} грн</div>
+      <div
+        v-for="it in order.items"
+        v-bind:key="it.productId"
+        class="flex items-center justify-between gap-3 rounded-xl border p-3 text-sm"
+      >
+        <div class="flex min-w-0 items-center gap-3">
+          <!-- image -->
+          <div class="h-12 w-12 shrink-0 overflow-hidden rounded-xl border bg-gray-50 p-1">
+            <img
+              v-if="itemImageByProductId[it.productId]"
+              v-bind:src="itemImageByProductId[it.productId]"
+              alt=""
+              class="h-full w-full object-contain"
+            />
+          </div>
+
+          <!-- text -->
+          <div class="min-w-0">
+            <div class="truncate font-semibold text-gray-900">
+              {{ it.name }}
+            </div>
+            <div class="mt-1 text-xs text-gray-600">
+              {{ (Number(it.price || 0)).toFixed(2) }} грн × {{ it.qty }}
+            </div>
+          </div>
+        </div>
+
+        <div class="shrink-0 font-semibold">
+          {{ (Number(it.price || 0) * Number(it.qty || 0)).toFixed(2) }} грн
+        </div>
       </div>
     </div>
 
     <div class="mt-4 flex items-center justify-between">
-      <div class="text-sm">Разом: <span class="text-lg font-bold">{{ order.total.toFixed(2) }} грн</span></div>
-      <div class="text-sm">Статус: <span class="font-semibold">{{ statusUa(order.status) }}</span></div>
+      <div class="text-sm">
+        Разом: <span class="text-lg font-bold">{{ Number(order.total || 0).toFixed(2) }} грн</span>
+      </div>
+      <div class="text-sm">
+        Статус: <span class="font-semibold">{{ statusUa(order.status) }}</span>
+      </div>
     </div>
 
     <div class="mt-4 flex flex-wrap gap-2">
-      <UiButton :disabled="saving" variant="ghost" @click="set('new')">Нове</UiButton>
-      <UiButton :disabled="saving" variant="primary" @click="set('issued')">Видане</UiButton>
-      <UiButton :disabled="saving" variant="danger" @click="set('canceled')">Скасоване</UiButton>
+      <UiButton v-bind:disabled="saving" variant="ghost" v-on:click="set('new')">Нове</UiButton>
+      <UiButton v-bind:disabled="saving" variant="primary" v-on:click="set('issued')">Видане</UiButton>
+      <UiButton v-bind:disabled="saving" variant="danger" v-on:click="set('canceled')">Скасоване</UiButton>
     </div>
 
-    <AlertBox class="mt-4" :text="msg" :kind="msgKind" />
+    <AlertBox class="mt-4" v-bind:text="msg" v-bind:kind="msgKind" />
   </div>
 </template>
 
 <script setup lang="ts">
 import type { OrderStatus } from '~/composables/useOrders'
+import { doc, getDoc } from 'firebase/firestore'
 
 await requireRole('pharmacist')
 
@@ -44,6 +76,8 @@ const order = ref<any | null>(null)
 const saving = ref(false)
 const msg = ref('')
 const msgKind = ref<'info'|'error'|'success'>('info')
+
+const itemImageByProductId = reactive<Record<string, string>>({})
 
 function statusUa (s: string) {
   if (s === 'issued') return 'видане'
@@ -58,11 +92,45 @@ function orderNumber(o: any) {
   return a.slice(0, 6) + '-' + a.slice(6, 10)
 }
 
+function normalizeLocalImagePath(imagePath: string) {
+  const raw = String(imagePath || '').trim().replace(/\\/g, '/')
+  if (!raw) return ''
+  const rel = raw.includes('/') ? raw.replace(/^\/+/, '') : `images/${raw}`
+  return '/' + rel
+}
+
+async function preloadItemImages(items: any[]) {
+  try {
+    const nuxtApp = useNuxtApp()
+    const fb = (nuxtApp as any).$firebase
+    if (!fb?.db) return
+
+    const ids = Array.from(new Set((items || []).map((x: any) => String(x?.productId || '')).filter(Boolean)))
+    for (const id of ids) {
+      if (itemImageByProductId[id]) continue
+
+      const snap = await getDoc(doc(fb.db, 'products', id))
+      if (!snap.exists()) continue
+      const p: any = snap.data() || {}
+
+      const src = p.imageUrl
+        ? String(p.imageUrl)
+        : (p.imagePath ? normalizeLocalImagePath(String(p.imagePath)) : '')
+
+      if (src) itemImageByProductId[id] = src
+    }
+  } catch {
+    // якщо зображення не підтягнуться — просто не показуємо їх
+  }
+}
+
 onMounted(async () => {
   const o = await getById(String(route.params.id))
   if (!o) return
   if (!pharmacyCode.value || o.pharmacyCode !== pharmacyCode.value) return
+
   order.value = o
+  await preloadItemImages(o.items || [])
 })
 
 async function set (status: OrderStatus) {
