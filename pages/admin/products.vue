@@ -92,11 +92,11 @@
     <!-- Modal -->
     <div v-if="modalOpen" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
       <div class="w-full max-w-4xl rounded-3xl bg-white shadow-xl">
-        <div class="flex items-center justify-between border-b p-5">
+        <div class="flex items-center justify-between border-b pt-2 px-5">
           <div class="text-lg font-bold">
             {{ editingId ? 'Редагувати товар' : 'Додати товар' }}
           </div>
-        <div class="flex items-center justify-end gap-2 border-t p-5"> 
+        <div class="flex items-center justify-end gap-2 border-t pt-2 px-5"> 
           <UiButton v-on:click="closeModal">Скасувати</UiButton>
           <UiButton variant="primary" v-bind:disabled="saving" v-on:click="save">
             Зберегти
