@@ -120,6 +120,7 @@ function addToCart () {
     productId: props.product.id,
     name: props.product.name,
     price: Number(props.product.price || 0),
+    imageUrl: imgSrc.value,
     qty: 1
   })
 }
