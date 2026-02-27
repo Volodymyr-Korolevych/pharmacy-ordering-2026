@@ -1,0 +1,292 @@
+name: TASK018 - Header component + client-only search in header for /catalog
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  task018:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Overwrite components/AppHeader.vue
+        shell: bash
+        run: |
+          mkdir -p components
+          cat > components/AppHeader.vue <<'EOF'
+          <template>
+            <header class="border-b bg-white">
+              <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <!-- Brand -->
+                <div class="flex items-center gap-3">
+                  <div class="h-9 w-9 rounded-xl bg-emerald-600"></div>
+                  <div>
+                    <div class="text-sm font-semibold leading-4">Мережа аптек</div>
+                    <div class="text-xs text-gray-500">Онлайн-замовлення (самовивіз)</div>
+                  </div>
+                </div>
+
+                <!-- Search (client only, only on /catalog) -->
+                <div v-if="showSearch" class="w-full sm:w-[320px] lg:w-[380px]">
+                  <label class="relative block">
+                    <span class="sr-only">Пошук</span>
+                    <input
+                      v-model="searchText"
+                      type="text"
+                      placeholder="Пошук за назвою товару…"
+                      class="w-full rounded-2xl border bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      v-if="searchText"
+                      type="button"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl px-2 py-1 text-xs text-gray-600 hover:bg-gray-100"
+                      v-on:click="clearSearch"
+                      aria-label="Очистити пошук"
+                    >
+                      ✕
+                    </button>
+                  </label>
+                  <div class="mt-1 text-xs text-gray-500">
+                    Пошук працює тільки на сторінці каталогу.
+                  </div>
+                </div>
+
+                <!-- Nav -->
+                <div class="flex items-center gap-2">
+                  <NuxtLink v-if="isClient" to="/catalog" class="px-3 py-2 text-sm hover:underline">Каталог</NuxtLink>
+                  <NuxtLink v-if="isClient" to="/cart" class="px-3 py-2 text-sm hover:underline">
+                    Кошик
+                    <span v-if="cartCount > 0" class="ml-1 rounded-full bg-emerald-600 px-2 py-0.5 text-xs text-white">{{ cartCount }}</span>
+                  </NuxtLink>
+                  <NuxtLink v-if="isClient" to="/orders" class="px-3 py-2 text-sm hover:underline">Мої замовлення</NuxtLink>
+
+                  <NuxtLink v-if="isPharmacist" to="/pharmacist/orders" class="px-3 py-2 text-sm hover:underline">Замовлення аптеки</NuxtLink>
+
+                  <NuxtLink v-if="isAdmin" to="/admin/products" class="px-3 py-2 text-sm hover:underline">Товари</NuxtLink>
+
+                  <button
+                    v-if="isAuthed"
+                    class="ml-2 rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
+                    v-on:click="logout"
+                  >
+                    Вийти
+                  </button>
+                </div>
+              </div>
+            </header>
+          </template>
+
+          <script setup lang="ts">
+          import { useCartStore } from '~/stores/cart'
+
+          const cart = useCartStore()
+          const route = useRoute()
+          const router = useRouter()
+
+          const { authKind, signOutAll } = useAuthFacade()
+
+          const isAdmin = computed(() => authKind.value === 'admin')
+          const isPharmacist = computed(() => authKind.value === 'pharmacist')
+          const isClient = computed(() => authKind.value === 'client')
+          const isAuthed = computed(() => authKind.value !== 'none')
+
+          const cartCount = computed(() => cart.totalQty)
+
+          const isCatalogPage = computed(() => String(route.path || '') === '/catalog')
+          const showSearch = computed(() => isClient.value && isCatalogPage.value)
+
+          const searchText = ref<string>('')
+
+          // sync from URL -> input
+          watch(
+            () => route.query.q,
+            (q) => {
+              const next = typeof q === 'string' ? q : ''
+              // не робимо зайвих перезаписів, щоб не миготіло
+              if (searchText.value !== next) searchText.value = next
+            },
+            { immediate: true }
+          )
+
+          // input -> URL (debounce)
+          let t: any = null
+          watch(searchText, (val) => {
+            if (!showSearch.value) return
+
+            if (t) clearTimeout(t)
+            t = setTimeout(async () => {
+              const q = (val || '').trim()
+              const nextQuery: any = { ...route.query }
+              if (q) nextQuery.q = q
+              else delete nextQuery.q
+
+              await router.replace({ path: route.path, query: nextQuery })
+            }, 250)
+          })
+
+          function clearSearch () {
+            searchText.value = ''
+          }
+
+          async function logout () {
+            await signOutAll()
+            cart.clear()
+            await navigateTo('/auth')
+          }
+          </script>
+          EOF
+
+      - name: Overwrite layouts/default.vue
+        shell: bash
+        run: |
+          mkdir -p layouts
+          cat > layouts/default.vue <<'EOF'
+          <template>
+            <div class="min-h-screen bg-gray-50 text-gray-900">
+              <AppHeader />
+
+              <main class="mx-auto max-w-6xl px-4 py-6">
+                <slot />
+              </main>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          // Header винесено в components/AppHeader.vue
+          </script>
+          EOF
+
+      - name: Overwrite pages/catalog.vue (add search filter by route.query.q)
+        shell: bash
+        run: |
+          mkdir -p pages
+          cat > pages/catalog.vue <<'EOF'
+          <template>
+            <div class="grid gap-6">
+              <div class="rounded-2xl border bg-white p-5 shadow-sm">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h1 class="text-xl font-bold">Каталог ліків</h1>
+                    <p class="mt-1 text-sm text-gray-600">Оберіть категорію та додайте препарати в кошик.</p>
+                  </div>
+
+                  <!-- Filters -->
+                  <div class="grid w-full gap-3 sm:w-auto sm:grid-cols-2">
+                    <label class="grid gap-1">
+                      <span class="text-sm text-gray-700">Категорія</span>
+                      <select
+                        v-model="selectedParent"
+                        class="min-w-[220px] rounded-xl border px-3 py-2"
+                        v-on:change="onParentChanged"
+                      >
+                        <option value="">Усі категорії</option>
+                        <option v-for="p in parents" v-bind:key="p" v-bind:value="p">
+                          {{ p }}
+                        </option>
+                      </select>
+                    </label>
+
+                    <label class="grid gap-1">
+                      <span class="text-sm text-gray-700">Підкатегорія</span>
+                      <select
+                        v-model="selectedChild"
+                        class="min-w-[220px] rounded-xl border px-3 py-2"
+                        v-bind:disabled="!selectedParent"
+                      >
+                        <option value="">Усі підкатегорії</option>
+                        <option v-for="c in children" v-bind:key="c" v-bind:value="c">
+                          {{ c }}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="loading" class="text-sm text-gray-600">Завантаження...</div>
+
+              <div v-else class="grid gap-4">
+                <div class="text-sm text-gray-600">
+                  Показано: <b>{{ filtered.length }}</b> товарів
+                  <span v-if="selectedParent"> • {{ selectedParent }}</span>
+                  <span v-if="selectedChild"> / {{ selectedChild }}</span>
+                  <span v-if="searchQuery"> • пошук: «{{ searchQuery }}»</span>
+                </div>
+
+                <!-- 4 cards per row on large screens -->
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  <ProductCard
+                    v-for="p in filtered"
+                    v-bind:key="p.id"
+                    v-bind:product="p"
+                  />
+                </div>
+
+                <div v-if="filtered.length === 0" class="text-sm text-gray-600">
+                  Нічого не знайдено для обраних фільтрів.
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <script setup lang="ts">
+          import { CATEGORIES } from '~/data/categories'
+
+          const route = useRoute()
+          const { products, loading, fetchAll } = useProducts() as any
+
+          const selectedParent = ref<string>('')
+          const selectedChild = ref<string>('')
+
+          const parents = computed(() => Object.keys(CATEGORIES))
+
+          const children = computed(() => {
+            if (!selectedParent.value) return []
+            return (CATEGORIES as any)[selectedParent.value] as string[]
+          })
+
+          const searchQuery = computed(() => {
+            const q = route.query.q
+            return typeof q === 'string' ? q.trim() : ''
+          })
+
+          const filtered = computed(() => {
+            const list = Array.isArray(products.value) ? products.value : []
+            const p = selectedParent.value
+            const c = selectedChild.value
+            const q = searchQuery.value.toLowerCase()
+
+            return list.filter((x: any) => {
+              if (p && x.parentCategory !== p) return false
+              if (c && x.childCategory !== c) return false
+              if (q) {
+                const name = String(x?.name || '').toLowerCase()
+                if (!name.includes(q)) return false
+              }
+              return true
+            })
+          })
+
+          function onParentChanged () {
+            selectedChild.value = ''
+          }
+
+          onMounted(async () => {
+            await requireRole('client') // щоб не ловити SSR 500
+            await fetchAll()
+          })
+          </script>
+          EOF
+
+      - name: Commit & push
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add components/AppHeader.vue layouts/default.vue pages/catalog.vue
+          git commit -m "TASK018: header component + client-only search in header for /catalog" || echo "No changes to commit"
+          git push
