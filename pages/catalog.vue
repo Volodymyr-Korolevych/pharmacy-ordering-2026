@@ -47,6 +47,7 @@
         Показано: <b>{{ filtered.length }}</b> товарів
         <span v-if="selectedParent"> • {{ selectedParent }}</span>
         <span v-if="selectedChild"> / {{ selectedChild }}</span>
+        <span v-if="searchQuery"> • пошук: «{{ searchQuery }}»</span>
       </div>
 
       <!-- 4 cards per row on large screens -->
@@ -68,6 +69,7 @@
 <script setup lang="ts">
 import { CATEGORIES } from '~/data/categories'
 
+const route = useRoute()
 const { products, loading, fetchAll } = useProducts() as any
 
 const selectedParent = ref<string>('')
@@ -80,14 +82,24 @@ const children = computed(() => {
   return (CATEGORIES as any)[selectedParent.value] as string[]
 })
 
+const searchQuery = computed(() => {
+  const q = route.query.q
+  return typeof q === 'string' ? q.trim() : ''
+})
+
 const filtered = computed(() => {
   const list = Array.isArray(products.value) ? products.value : []
   const p = selectedParent.value
   const c = selectedChild.value
+  const q = searchQuery.value.toLowerCase()
 
   return list.filter((x: any) => {
     if (p && x.parentCategory !== p) return false
     if (c && x.childCategory !== c) return false
+    if (q) {
+      const name = String(x?.name || '').toLowerCase()
+      if (!name.includes(q)) return false
+    }
     return true
   })
 })
