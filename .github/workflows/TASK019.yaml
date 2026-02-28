@@ -1,4 +1,4 @@
-name: TASK019 - Auth UX: better error handling + error not hidden by browser email suggestions
+name: TASK019 - Auth UX better error handling + error not hidden by browser email suggestions
 
 on:
   workflow_dispatch:
