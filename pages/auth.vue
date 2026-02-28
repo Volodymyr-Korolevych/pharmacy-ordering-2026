@@ -6,7 +6,7 @@
         Увійдіть або створіть акаунт клієнта.
       </div>
 
-      <!-- error goes ABOVE inputs so it won't be covered by browser suggestions -->
+      <!-- Error ABOVE inputs (won't be covered by browser email suggestions) -->
       <div
         v-if="errorMessage"
         class="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
@@ -17,7 +17,7 @@
         <div class="mt-1 leading-6">{{ errorMessage }}</div>
       </div>
 
-      <!-- mode switch -->
+      <!-- Mode switch -->
       <div class="mt-5 flex gap-2">
         <button
           type="button"
@@ -37,7 +37,8 @@
         </button>
       </div>
 
-      <form class="mt-5 grid gap-4" v-on:submit.prevent="submit">
+      <!-- novalidate: so browser won't block submit for invalid email -->
+      <form class="mt-5 grid gap-4" novalidate v-on:submit.prevent="submit">
         <label class="grid gap-1">
           <span class="text-sm text-gray-700">Email</span>
           <input
@@ -103,8 +104,7 @@
 </template>
 
 <script setup lang="ts">
-const { loginClient, registerClient, loginFixed } = useAuthFacade()
-
+const { loginClient, registerClient, loginFixed, signOutAll } = useAuthFacade()
 const route = useRoute()
 
 const mode = ref<'login' | 'register'>('login')
@@ -123,8 +123,15 @@ function clearError () {
 function setMode (m: 'login' | 'register') {
   mode.value = m
   errorMessage.value = ''
-  // не чистимо email, щоб було зручно, але чистимо підтвердження паролю
+  // очищаємо поля (як ти просила)
+  email.value = ''
+  password.value = ''
   password2.value = ''
+}
+
+function isValidEmail(e: string) {
+  // простий і достатній для навчального проєкту валідатор
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)
 }
 
 function validate () {
@@ -132,6 +139,7 @@ function validate () {
   const p = password.value
 
   if (!e) return 'Введіть email.'
+  if (!isValidEmail(e)) return 'Невірний формат email.'
   if (!p) return 'Введіть пароль.'
 
   if (mode.value === 'register') {
@@ -151,8 +159,8 @@ async function submit () {
 
   busy.value = true
   try {
-    // якщо раптом є параметр kind=fixed (адмін/провізор) — лишаємо підтримку
     const kind = typeof route.query.kind === 'string' ? route.query.kind : ''
+
     if (kind === 'admin' || kind === 'pharmacist') {
       await loginFixed(kind, email.value.trim(), password.value)
       return
@@ -164,8 +172,6 @@ async function submit () {
       await registerClient(email.value.trim(), password.value)
     }
   } catch (e: any) {
-    // useAuthFacade вже дає україномовні помилки (TASK007),
-    // але тут підстрахуємось
     errorMessage.value = e?.message || 'Не вдалося виконати дію. Спробуйте ще раз.'
   } finally {
     busy.value = false
