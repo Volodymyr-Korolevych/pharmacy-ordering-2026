@@ -1,28 +1,53 @@
 <template>
-  <div class="min-h-[calc(100vh-120px)] grid place-items-center">
-    <div class="w-full max-w-md rounded-3xl border bg-white p-6 shadow-sm">
-      <div class="mb-6">
-        <div class="text-xl font-bold">
-          {{ mode === 'login' ? 'Вхід у застосунок' : 'Реєстрація' }}
-        </div>
-        <div class="mt-1 text-sm text-gray-600">
-          {{ mode === 'login'
-            ? 'Увійдіть, щоб зробити онлайн-замовлення ліків.'
-            : 'Створіть акаунт, щоб зробити перше замовлення.' }}
-        </div>
+  <div class="mx-auto max-w-md">
+    <div class="rounded-3xl border bg-white p-6 shadow-sm">
+      <div class="text-lg font-bold">Вхід у застосунок</div>
+      <div class="mt-1 text-sm text-gray-600">
+        Увійдіть або створіть акаунт клієнта.
       </div>
 
-      <!-- LOGIN -->
-      <form v-if="mode === 'login'" class="grid gap-4" @submit.prevent="onLogin">
+      <!-- error goes ABOVE inputs so it won't be covered by browser suggestions -->
+      <div
+        v-if="errorMessage"
+        class="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        role="status"
+        aria-live="polite"
+      >
+        <div class="font-semibold">Помилка</div>
+        <div class="mt-1 leading-6">{{ errorMessage }}</div>
+      </div>
+
+      <!-- mode switch -->
+      <div class="mt-5 flex gap-2">
+        <button
+          type="button"
+          class="flex-1 rounded-2xl px-4 py-2 text-sm font-semibold"
+          v-bind:class="mode === 'login' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'"
+          v-on:click="setMode('login')"
+        >
+          Вхід
+        </button>
+        <button
+          type="button"
+          class="flex-1 rounded-2xl px-4 py-2 text-sm font-semibold"
+          v-bind:class="mode === 'register' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'"
+          v-on:click="setMode('register')"
+        >
+          Реєстрація
+        </button>
+      </div>
+
+      <form class="mt-5 grid gap-4" v-on:submit.prevent="submit">
         <label class="grid gap-1">
-          <span class="text-sm text-gray-700">Email / Логін</span>
+          <span class="text-sm text-gray-700">Email</span>
           <input
-            v-model.trim="login"
-            type="text"
-            autocomplete="username"
-            required
-            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
-            placeholder="name@email.com або apotheke005"
+            v-model="email"
+            type="email"
+            inputmode="email"
+            autocomplete="email"
+            class="rounded-2xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="name@example.com"
+            v-on:input="clearError"
           />
         </label>
 
@@ -31,229 +56,119 @@
           <input
             v-model="password"
             type="password"
-            autocomplete="current-password"
-            required
-            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
+            v-bind:autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
+            class="rounded-2xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
             placeholder="••••••••"
+            v-on:input="clearError"
           />
         </label>
 
-        <AlertBox :text="msg" :kind="msgKind" />
-
-        <UiButton type="submit" variant="primary" :disabled="submitting" class="w-full">
-          Увійти
-        </UiButton>
-
-        <p class="text-center text-sm text-gray-600">
-          Ще немає акаунта?
-          <button type="button" class="font-semibold text-emerald-700 hover:underline" @click="openRegister">
-            Зареєструйтесь зараз
-          </button>
-        </p>
-      </form>
-
-      <!-- REGISTER -->
-      <form v-else class="grid gap-4" @submit.prevent="onRegister">
-        <label class="grid gap-1">
-          <span class="text-sm text-gray-700">Email</span>
+        <label v-if="mode === 'register'" class="grid gap-1">
+          <span class="text-sm text-gray-700">Повторіть пароль</span>
           <input
-            v-model.trim="regEmail"
-            type="email"
-            autocomplete="email"
-            required
-            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
-            placeholder="name@email.com"
-          />
-        </label>
-
-        <label class="grid gap-1">
-          <span class="text-sm text-gray-700">Пароль</span>
-          <input
-            v-model="regPassword"
+            v-model="password2"
             type="password"
             autocomplete="new-password"
-            minlength="6"
-            required
-            class="rounded-2xl border px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-200"
-            placeholder="мінімум 6 символів"
+            class="rounded-2xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+            placeholder="••••••••"
+            v-on:input="clearError"
           />
         </label>
 
-        <AlertBox :text="msg" :kind="msgKind" />
+        <button
+          type="submit"
+          class="mt-1 rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+          v-bind:disabled="busy"
+        >
+          {{ mode === 'login' ? 'Увійти' : 'Зареєструватися' }}
+        </button>
 
-        <UiButton type="submit" variant="primary" :disabled="submitting" class="w-full">
-          Зареєструватися
-        </UiButton>
-
-        <p class="text-center text-sm text-gray-600">
-          Вже маєте акаунт?
-          <button type="button" class="font-semibold text-emerald-700 hover:underline" @click="openLogin">
-            Увійдіть
-          </button>
-        </p>
+        <div class="text-center text-sm text-gray-600">
+          <template v-if="mode === 'login'">
+            Ще немає акаунта?
+            <button type="button" class="font-semibold text-emerald-700 hover:underline" v-on:click="setMode('register')">
+              Зареєструйтесь зараз
+            </button>
+          </template>
+          <template v-else>
+            Вже є акаунт?
+            <button type="button" class="font-semibold text-emerald-700 hover:underline" v-on:click="setMode('login')">
+              Увійти
+            </button>
+          </template>
+        </div>
       </form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { uaAuthError, isEmailLike } from '~/utils/authUaErrors'
+const { loginClient, registerClient, loginFixed } = useAuthFacade()
 
-const {
-  authKind,
-  ensureAuthReady,
-  clientLogin,
-  clientRegister,
-  fixedLoginAdmin,
-  fixedLoginPharmacist
-} = useAuthFacade()
-
-const runtime = useRuntimeConfig()
+const route = useRoute()
 
 const mode = ref<'login' | 'register'>('login')
 
-const login = ref('')
+const email = ref('')
 const password = ref('')
+const password2 = ref('')
 
-const regEmail = ref('')
-const regPassword = ref('')
+const busy = ref(false)
+const errorMessage = ref('')
 
-const submitting = ref(false)
-const msg = ref('')
-const msgKind = ref<'info' | 'error' | 'success'>('info')
+function clearError () {
+  if (errorMessage.value) errorMessage.value = ''
+}
 
-onMounted(async () => {
-  await ensureAuthReady()
-  if (authKind.value !== 'none') {
-    await navigateTo(startRouteFor(authKind.value))
+function setMode (m: 'login' | 'register') {
+  mode.value = m
+  errorMessage.value = ''
+  // не чистимо email, щоб було зручно, але чистимо підтвердження паролю
+  password2.value = ''
+}
+
+function validate () {
+  const e = email.value.trim()
+  const p = password.value
+
+  if (!e) return 'Введіть email.'
+  if (!p) return 'Введіть пароль.'
+
+  if (mode.value === 'register') {
+    if (p.length < 6) return 'Пароль має містити щонайменше 6 символів.'
+    if (p !== password2.value) return 'Паролі не співпадають.'
   }
-})
-
-function startRouteFor(kind: string) {
-  if (kind === 'admin') return '/admin/products'
-  if (kind === 'pharmacist') return '/pharmacist/orders'
-  return '/catalog'
+  return ''
 }
 
-function resetMsg() {
-  msg.value = ''
-  msgKind.value = 'info'
-}
-
-function setError(text: string) {
-  msgKind.value = 'error'
-  msg.value = text
-}
-
-function openRegister() {
-  resetMsg()
-  mode.value = 'register'
-  regEmail.value = ''
-  regPassword.value = ''
-}
-
-function openLogin() {
-  resetMsg()
-  mode.value = 'login'
-  login.value = ''
-  password.value = ''
-}
-
-function looksLikePharmacistLogin(v: string) {
-  return /^apotheke\d{3}$/i.test(String(v || '').trim())
-}
-
-async function onLogin() {
-  resetMsg()
-  submitting.value = true
-  try {
-    const l = String(login.value || '').trim()
-    const p = String(password.value || '').trim()
-
-    if (!l) {
-      setError('Вкажіть email або логін.')
-      return
-    }
-    if (!p) {
-      setError('Вкажіть пароль.')
-      return
-    }
-
-    // 1) Admin (fixed)
-    if (l === runtime.public.adminLogin) {
-      const ok = fixedLoginAdmin(l, p)
-      if (!ok) {
-        setError('Невірний пароль адміністратора.')
-        return
-      }
-      msgKind.value = 'success'
-      msg.value = 'Успішний вхід.'
-      await navigateTo('/admin/products')
-      return
-    }
-
-    // 2) Pharmacist (fixed apotheke001..010)
-    if (looksLikePharmacistLogin(l)) {
-      const pr = fixedLoginPharmacist(l, p)
-      if (!pr.ok) {
-        setError('Невірний пароль провізора.')
-        return
-      }
-      msgKind.value = 'success'
-      msg.value = 'Успішний вхід.'
-      await navigateTo('/pharmacist/orders')
-      return
-    }
-
-    // If not fixed role: this must be client login via Firebase
-    if (!isEmailLike(l)) {
-      setError('Для входу клієнта введіть email (наприклад name@email.com).')
-      return
-    }
-
-    await clientLogin(l, p)
-    msgKind.value = 'success'
-    msg.value = 'Успішний вхід.'
-    await navigateTo('/catalog')
-  } catch (e: any) {
-    setError(uaAuthError(e, 'login'))
-  } finally {
-    submitting.value = false
+async function submit () {
+  errorMessage.value = ''
+  const v = validate()
+  if (v) {
+    errorMessage.value = v
+    return
   }
-}
 
-async function onRegister() {
-  resetMsg()
-  submitting.value = true
+  busy.value = true
   try {
-    const email = String(regEmail.value || '').trim()
-    const pass = String(regPassword.value || '').trim()
-
-    if (!email) {
-      setError('Вкажіть email.')
-      return
-    }
-    if (!isEmailLike(email)) {
-      setError('Некоректний email. Перевірте адресу та спробуйте ще раз.')
-      return
-    }
-    if (!pass) {
-      setError('Вкажіть пароль.')
-      return
-    }
-    if (pass.length < 6) {
-      setError('Пароль має містити щонайменше 6 символів.')
+    // якщо раптом є параметр kind=fixed (адмін/провізор) — лишаємо підтримку
+    const kind = typeof route.query.kind === 'string' ? route.query.kind : ''
+    if (kind === 'admin' || kind === 'pharmacist') {
+      await loginFixed(kind, email.value.trim(), password.value)
       return
     }
 
-    await clientRegister(email, pass)
-    msgKind.value = 'success'
-    msg.value = 'Акаунт створено. Успішний вхід.'
-    await navigateTo('/catalog')
+    if (mode.value === 'login') {
+      await loginClient(email.value.trim(), password.value)
+    } else {
+      await registerClient(email.value.trim(), password.value)
+    }
   } catch (e: any) {
-    setError(uaAuthError(e, 'register'))
+    // useAuthFacade вже дає україномовні помилки (TASK007),
+    // але тут підстрахуємось
+    errorMessage.value = e?.message || 'Не вдалося виконати дію. Спробуйте ще раз.'
   } finally {
-    submitting.value = false
+    busy.value = false
   }
 }
 </script>
