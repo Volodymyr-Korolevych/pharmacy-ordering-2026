@@ -3,6 +3,9 @@
     <h1 class="text-xl font-bold">Оформлення замовлення</h1>
     <p class="mt-1 text-sm text-gray-600">Самовивіз. Оплата при отриманні.</p>
 
+    <!-- NEW: show errors/success messages (so errors are visible) -->
+    <AlertBox v-if="msg" class="mt-4" v-bind:text="msg" v-bind:kind="msgKind" />
+
     <!-- Cart items list -->
     <div class="mt-5 rounded-2xl border p-4">
       <div class="flex items-center justify-between">
@@ -20,26 +23,29 @@
         <div
           v-for="it in displayItems"
           v-bind:key="it.productId"
-          class="grid grid-cols-[1fr_auto] gap-3 rounded-xl border p-3"
+          class="flex items-center justify-between gap-3 rounded-xl border p-3 text-sm"
         >
           <div class="min-w-0">
-            <div class="truncate text-sm font-semibold text-gray-900">{{ it.name }}</div>
+            <div class="truncate font-semibold text-gray-900">
+              {{ it.name }}
+            </div>
             <div class="mt-1 text-xs text-gray-600">
-              {{ formatPrice(it.price) }} × {{ it.qty }}
+              {{ Number(it.price || 0).toFixed(2) }} грн × {{ it.qty }}
             </div>
           </div>
 
-          <div class="text-sm font-semibold text-gray-900">
-            {{ formatPrice(it.price * it.qty) }}
+          <div class="shrink-0 font-semibold">
+            {{ (Number(it.price || 0) * Number(it.qty || 0)).toFixed(2) }} грн
           </div>
         </div>
 
-        <div class="mt-2 rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
+        <div class="rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
           <div class="flex justify-between">
-            <span>Сума:</span>
-            <span class="font-semibold">{{ formatPrice(displayTotal) }}</span>
+            <span>Сума замовлення:</span>
+            <span class="font-semibold">{{ Number(displayTotal || 0).toFixed(2) }} грн</span>
           </div>
           <div class="mt-1 text-xs text-gray-500">Оплата: при отриманні</div>
+          <div class="mt-1 text-xs text-gray-500">Отримання: самовивіз</div>
         </div>
       </div>
     </div>
@@ -48,28 +54,45 @@
     <div class="mt-5 grid gap-3">
       <label class="grid gap-1">
         <span class="text-sm text-gray-700">Оберіть аптеку</span>
-        <select v-model="pharmacyCode" class="rounded-xl border px-3 py-2" v-bind:disabled="state === 'done'">
+        <select
+          v-model="pharmacyCode"
+          class="rounded-xl border px-3 py-2"
+          v-bind:disabled="state === 'done'"
+          v-on:change="resetMsg"
+        >
           <option value="">— Оберіть —</option>
-          <option v-for="p in PHARMACIES" v-bind:key="p.code" v-bind:value="p.code">
-            {{ p.name }}, {{ p.address }}
+          <option
+            v-for="p in PHARMACIES"
+            v-bind:key="p.code"
+            v-bind:value="p.code"
+          >
+            {{ p.name }}
           </option>
         </select>
       </label>
 
-      <!-- Action area -->
-      <div class="mt-1">
-        <UiButton
-          v-if="state !== 'done'"
-          variant="primary"
-          class="w-full"
-          v-bind:disabled="submitting || displayItems.length === 0"
-          v-on:click="submit"
-        >
-          Підтвердити замовлення
-        </UiButton>
-
-        <AlertBox v-else class="mt-4" v-bind:text="'Замовлення прийняте'" v-bind:kind="msgKind" />
+      <div class="text-xs text-gray-500">
+        Для диплома: перелік аптек фіксований, оплата лише при отриманні, лише самовивіз.
       </div>
+
+      <!-- UI requirement #1 -->
+      <UiButton
+        v-if="state === 'form'"
+        class="w-full"
+        variant="primary"
+        v-bind:disabled="submitting || displayItems.length === 0"
+        v-on:click="submit"
+      >
+        Підтвердити замовлення
+      </UiButton>
+
+      <!-- CHANGED: show actual msg instead of hardcoded text -->
+      <AlertBox
+        v-else
+        class="mt-4"
+        v-bind:text="msg || 'Замовлення прийняте'"
+        v-bind:kind="msgKind"
+      />
 
       <UiButton
         v-if="state === 'done'"
@@ -111,13 +134,10 @@ const displayItems = computed(() => {
 })
 
 const displayTotal = computed(() => {
-  return state.value === 'done' ? submittedTotal.value : cart.total
+  return state.value === 'done'
+    ? submittedTotal.value
+    : cart.totalPrice
 })
-
-function formatPrice(v: any) {
-  const n = Number(v || 0)
-  return `${n.toFixed(2)} грн`
-}
 
 onMounted(async () => {
   await requireRole('client')
@@ -127,6 +147,11 @@ onMounted(async () => {
     return
   }
 })
+
+function resetMsg () {
+  msg.value = ''
+  msgKind.value = 'info'
+}
 
 async function submit () {
   msg.value = ''
