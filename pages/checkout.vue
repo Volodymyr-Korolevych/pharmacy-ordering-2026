@@ -3,10 +3,8 @@
     <h1 class="text-xl font-bold">Оформлення замовлення</h1>
     <p class="mt-1 text-sm text-gray-600">Самовивіз. Оплата при отриманні.</p>
 
-    <!-- NEW: show errors/success messages (so errors are visible) -->
     <AlertBox v-if="msg" class="mt-4" v-bind:text="msg" v-bind:kind="msgKind" />
 
-    <!-- Cart items list -->
     <div class="mt-5 rounded-2xl border p-4">
       <div class="flex items-center justify-between">
         <div class="text-sm font-semibold">Товари у замовленні</div>
@@ -50,7 +48,6 @@
       </div>
     </div>
 
-    <!-- Form -->
     <div class="mt-5 grid gap-3">
       <label class="grid gap-1">
         <span class="text-sm text-gray-700">Оберіть аптеку</span>
@@ -75,7 +72,6 @@
         Для диплома: перелік аптек фіксований, оплата лише при отриманні, лише самовивіз.
       </div>
 
-      <!-- UI requirement #1 -->
       <UiButton
         v-if="state === 'form'"
         class="w-full"
@@ -86,7 +82,6 @@
         Підтвердити замовлення
       </UiButton>
 
-      <!-- CHANGED: show actual msg instead of hardcoded text -->
       <AlertBox
         v-else
         class="mt-4"
@@ -122,21 +117,20 @@ const msgKind = ref<'info'|'error'|'success'>('info')
 
 const createdOrderId = ref<string>('')
 
-// UI state requirement #1
 const state = ref<'form'|'done'>('form')
 
-// snapshot of items, to keep list visible after cart.clear()
 const submittedItems = ref<Array<{ productId: string; name: string; price: number; qty: number }>>([])
-const submittedTotal = ref<number>(0)
 
 const displayItems = computed(() => {
   return state.value === 'done' ? submittedItems.value : cart.items
 })
 
+// FIX: total is calculated from items (no dependency on cart.totalPrice)
 const displayTotal = computed(() => {
-  return state.value === 'done'
-    ? submittedTotal.value
-    : cart.totalPrice
+  const items = displayItems.value || []
+  return items.reduce((sum: number, it: any) => {
+    return sum + (Number(it?.price || 0) * Number(it?.qty || 0))
+  }, 0)
 })
 
 onMounted(async () => {
@@ -184,13 +178,12 @@ async function submit () {
       price: Number(i.price || 0),
       qty: Number(i.qty || 0)
     }))
-    submittedTotal.value = Number(displayTotal.value || 0)
 
     const id = await create({
       userId: clientUser.value.uid,
       pharmacyCode: pharmacyCode.value,
       items: submittedItems.value,
-      total: submittedTotal.value,
+      total: Number(displayTotal.value || 0),
       status: 'new',
       createdAt: Date.now()
     })
