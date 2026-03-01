@@ -19,7 +19,7 @@
           <!-- image -->
           <div class="h-12 w-12 shrink-0 overflow-hidden rounded-xl border bg-gray-50 p-1">
             <img
-              v-if="itemImageByProductId[it.productId]"
+              v-if="it?.productId && itemImageByProductId[it.productId]"
               v-bind:src="itemImageByProductId[it.productId]"
               alt=""
               class="h-full w-full object-contain"
@@ -31,6 +31,15 @@
             <div class="truncate font-semibold text-gray-900">
               {{ it.name }}
             </div>
+
+            <!-- missing product marker -->
+            <div v-if="!it?.productId" class="mt-1 text-xs font-semibold text-red-700">
+              Препарат відсутній у каталозі (немає ID)
+            </div>
+            <div v-else-if="missingProductIds[it.productId]" class="mt-1 text-xs font-semibold text-red-700">
+              Препарат видалено з каталогу
+            </div>
+
             <div class="mt-1 text-xs text-gray-600">
               {{ (Number(it.price || 0)).toFixed(2) }} грн × {{ it.qty }}
             </div>
@@ -78,6 +87,7 @@ const msg = ref('')
 const msgKind = ref<'info'|'error'|'success'>('info')
 
 const itemImageByProductId = reactive<Record<string, string>>({})
+const missingProductIds = reactive<Record<string, boolean>>({})
 
 function statusUa (s: string) {
   if (s === 'issued') return 'видане'
@@ -110,7 +120,11 @@ async function preloadItemImages(items: any[]) {
       if (itemImageByProductId[id]) continue
 
       const snap = await getDoc(doc(fb.db, 'products', id))
-      if (!snap.exists()) continue
+      if (!snap.exists()) {
+        missingProductIds[id] = true
+        continue
+      }
+
       const p: any = snap.data() || {}
 
       const src = p.imageUrl
