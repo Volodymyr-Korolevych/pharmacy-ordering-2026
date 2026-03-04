@@ -30,9 +30,7 @@
             ✕
           </button>
         </label>
-        <div class="mt-1 text-xs text-gray-500">
-          Пошук працює тільки на сторінці каталогу.
-        </div>
+
       </div>
 
       <!-- Nav -->

@@ -3,8 +3,6 @@
     <h1 class="text-xl font-bold">Оформлення замовлення</h1>
     <p class="mt-1 text-sm text-gray-600">Самовивіз. Оплата при отриманні.</p>
 
-    <AlertBox v-if="msg" class="mt-4" v-bind:text="msg" v-bind:kind="msgKind" />
-
     <div class="mt-5 rounded-2xl border p-4">
       <div class="flex items-center justify-between">
         <div class="text-sm font-semibold">Товари у замовленні</div>
@@ -68,9 +66,7 @@
         </select>
       </label>
 
-      <div class="text-xs text-gray-500">
-        Для диплома: перелік аптек фіксований, оплата лише при отриманні, лише самовивіз.
-      </div>
+    
 
       <UiButton
         v-if="state === 'form'"
