@@ -13,6 +13,13 @@
       <div class="mt-2 text-sm font-semibold line-clamp-2">
         {{ product.name }}
       </div>
+      <div class="text-xs text-gray-500">
+        {{ product.parentCategory }} / {{ product.childCategory }}
+      </div>
+
+      <div class="mt-1 text-xs text-gray-600">
+        {{ product.manufacturer }}
+      </div>
 
       <div class="mt-1 text-sm text-gray-700">
         {{ Number(product.price || 0).toFixed(2) }} грн
@@ -57,6 +64,7 @@ function add () {
     productId: props.product.id,
     name: props.product.name,
     price: Number(props.product.price || 0),
+    imageUrl: imageSrc.value,
     qty: 1
   })
 }
